@@ -409,6 +409,104 @@
                         </div>
                     </div>
                 </div>
+                <!-- Telegram Notification Section -->
+                <div id="telegram-security-card" class="telegram-security-card">
+                    <div class="telegram-card-header">
+                        <div class="telegram-header-left">
+                            <div class="telegram-badge-icon">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="#0088cc">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+                                </svg>
+                            </div>
+                            <div class="telegram-header-titles">
+                                <h3>Telegram Notifications</h3>
+                                <p>Instant alerts on your phone for captchas, warnings, bans, and bot security events</p>
+                            </div>
+                        </div>
+                        <div class="telegram-header-toggle">
+                            <span class="telegram-status-label" id="tg-status-label">Disabled</span>
+                            <div id="tg-security-toggle" class="neura-toggle" role="switch" aria-checked="false" onclick="toggleTelegramSecurity(this, event)">
+                                <div class="neura-toggle-track">
+                                    <span class="neura-toggle-thumb"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="telegram-card-body" id="tg-security-card-body">
+                        <div class="telegram-fields-grid">
+                            <div class="telegram-field-item">
+                                <label class="telegram-field-label" for="tg-security-bot-token">
+                                    <span>Telegram Bot Token</span>
+                                    <span class="telegram-tooltip-trigger" title="Get your Bot Token from @BotFather on Telegram">ⓘ</span>
+                                </label>
+                                <div class="telegram-input-wrapper">
+                                    <input type="password" id="tg-security-bot-token" class="telegram-field-input"
+                                        placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                                        autocomplete="off" spellcheck="false"
+                                        oninput="onTelegramFieldChange('bot_token', this.value)">
+                                    <button type="button" class="telegram-toggle-visibility-btn" onclick="toggleTokenVisibility('tg-security-bot-token', this)" title="Show/Hide Token">
+                                        <svg class="eye-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                        </svg>
+                                        <svg class="eye-icon-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span class="telegram-field-hint">Token issued by @BotFather when creating your bot</span>
+                            </div>
+
+                            <div class="telegram-field-item">
+                                <label class="telegram-field-label" for="tg-security-chat-id">
+                                    <span>Telegram Chat ID</span>
+                                    <span class="telegram-tooltip-trigger" title="Get your numeric Chat ID from @userinfobot on Telegram">ⓘ</span>
+                                </label>
+                                <div class="telegram-input-wrapper">
+                                    <input type="text" id="tg-security-chat-id" class="telegram-field-input"
+                                        placeholder="Your Telegram Chat ID e.g. 987654321"
+                                        autocomplete="off" spellcheck="false"
+                                        oninput="onTelegramFieldChange('chat_id', this.value)">
+                                </div>
+                                <span class="telegram-field-hint">Your numeric Telegram User ID or Channel/Group Chat ID</span>
+                            </div>
+                        </div>
+
+                        <!-- Instructions / Tooltip Box -->
+                        <div class="telegram-instructions-box">
+                            <div class="telegram-instructions-title">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/warning.svg'); width:13px; height:13px; background-color: var(--primary);"></span>
+                                <span>Quick Telegram Setup Guide:</span>
+                            </div>
+                            <ol class="telegram-instructions-list">
+                                <li>
+                                    <b>Create Bot:</b> Open Telegram and message <a href="https://t.me/BotFather" target="_blank" rel="noopener" class="telegram-link">@BotFather</a>. Send <code>/newbot</code>, choose a bot name & username, and paste the generated HTTP API token above.
+                                </li>
+                                <li>
+                                    <b>Activate Bot:</b> Open your bot's chat link (e.g. <code>t.me/your_bot_username</code>) and click <b>Start</b>.
+                                </li>
+                                <li>
+                                    <b>Find Chat ID:</b> Message <a href="https://t.me/userinfobot" target="_blank" rel="noopener" class="telegram-link">@userinfobot</a> on Telegram. Copy the numerical <b>Id</b> and paste it into the Chat ID field above.
+                                </li>
+                            </ol>
+                        </div>
+
+                        <!-- Actions: Test and Save -->
+                        <div class="telegram-buttons-row">
+                            <button type="button" class="btn-control input-dark" id="tg-test-btn" onclick="testTelegramNotification(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg');"></span>
+                                <span class="btn-text">Test Telegram Notification</span>
+                            </button>
+                            <button type="button" class="btn-control green" id="tg-save-btn" onclick="saveTelegramSettings(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/floppy-disk.svg');"></span>
+                                <span class="btn-text">Save Telegram Settings</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="security-stats-container">
                     <h2 class="sec-grid-title"><span class="icon-svg"
                             style="--icon: url('/static/assets/neura_icons/users.svg');"></span> Account Security Matrix

@@ -22,8 +22,11 @@ import sqlite3
 from datetime import datetime
 import calendar
 
-HISTORY_FILE = 'data/neura_history.db'
-LEGACY_HISTORY_FILE = 'data/history.json'
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+HISTORY_FILE = os.path.join(DATA_DIR, 'neura_history.db')
+LEGACY_HISTORY_FILE = os.path.join(DATA_DIR, 'history.json')
 
 def get_db():
     conn = sqlite3.connect(HISTORY_FILE, check_same_thread=False)

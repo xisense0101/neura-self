@@ -27,6 +27,9 @@ async function loadConfig() {
     originalConfig = JSON.parse(JSON.stringify(currentConfig));
     renderSettings(currentConfig);
     checkDirty();
+    if (typeof populateTelegramSecurityUI === 'function') {
+        populateTelegramSecurityUI();
+    }
 }
 
 function buildConfigCategories(cfg) {
@@ -230,6 +233,15 @@ function renderCategoryFlat(obj, path, categoryName, depth = 0, parentEnabled = 
                 <div class="cfg-section cfg-section-nested ${solverEnabled ? '' : 'cfg-section-disabled'}" id="captcha-solver-section">
                     <div class="cfg-section-head">Captcha Solver</div>
                     <div class="cfg-section-rows">${renderCaptchaSolverWidget(val, fullPath, selfEnabled)}</div>
+                </div>
+            `;
+        } else if (path === 'security.telegram' && key !== 'enabled') {
+        } else if (path === 'security' && key === 'telegram') {
+            const tgEnabled = val.enabled !== false && val.enabled !== undefined && val.enabled !== null ? !!val.enabled : false;
+            h += `
+                <div class="cfg-section cfg-section-nested ${tgEnabled ? '' : 'cfg-section-disabled'}" id="telegram-notifications-config-section">
+                    <div class="cfg-section-head"><span class="telegram-chip">Telegram</span> Notifications</div>
+                    <div class="cfg-section-rows">${renderTelegramConfigWidget(val, fullPath, selfEnabled)}</div>
                 </div>
             `;
         } else if (typeof val === 'boolean') {
@@ -648,6 +660,72 @@ window.selectRing = function(path, id, el) {
     checkDirty();
 };
 
+function renderTelegramConfigWidget(cfg, basePath, parentEnabled = true) {
+    const enabled = cfg.enabled !== false && cfg.enabled !== undefined && cfg.enabled !== null ? !!cfg.enabled : false;
+    const botToken = cfg.bot_token || '';
+    const chatId = cfg.chat_id || '';
+    const dis = parentEnabled && enabled ? '' : ' disabled';
+
+    return `
+        <div class="cfg-row" data-path="${basePath}.enabled">
+            <div class="cfg-row-label">
+                <span class="cfg-label-text">Enable Telegram Notifications</span>
+            </div>
+            <div class="cfg-row-control">
+                ${renderNeuraToggle(basePath + '.enabled', enabled, parentEnabled, true)}
+            </div>
+        </div>
+        <div class="cfg-row" data-path="${basePath}.bot_token">
+            <div class="cfg-row-label">
+                <span class="cfg-label-text">Telegram Bot Token</span>
+                <span class="csw-service-hint">Obtain from @BotFather on Telegram via /newbot</span>
+            </div>
+            <div class="cfg-row-control">
+                <div class="cfg-input-wrap telegram-input-wrapper">
+                    <input type="password" id="cfg-tg-bot_token" class="cfg-input" value="${botToken}"${dis}
+                        placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                        onchange="updateDeepVal('${basePath}.bot_token', this.value); if(typeof populateTelegramSecurityUI==='function')populateTelegramSecurityUI();">
+                    <button type="button" class="telegram-toggle-visibility-btn" onclick="toggleTokenVisibility('cfg-tg-bot_token', this)" title="Show/Hide Token">
+                        <svg class="eye-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <svg class="eye-icon-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="cfg-row" data-path="${basePath}.chat_id">
+            <div class="cfg-row-label">
+                <span class="cfg-label-text">Telegram Chat ID</span>
+                <span class="csw-service-hint">Your numeric Chat ID from @userinfobot</span>
+            </div>
+            <div class="cfg-row-control">
+                <div class="cfg-input-wrap">
+                    <input type="text" id="cfg-tg-chat_id" class="cfg-input" value="${chatId}"${dis}
+                        placeholder="Your Telegram Chat ID e.g. 987654321"
+                        onchange="updateDeepVal('${basePath}.chat_id', this.value); if(typeof populateTelegramSecurityUI==='function')populateTelegramSecurityUI();">
+                </div>
+            </div>
+        </div>
+        <div class="cfg-row">
+            <div class="cfg-row-label">
+                <span class="cfg-label-text">Test Notification</span>
+                <span class="csw-service-hint">Sends a test alert to verify your bot token & chat ID</span>
+            </div>
+            <div class="cfg-row-control">
+                <button type="button" class="btn-control input-dark" onclick="testTelegramNotification(this)" ${!parentEnabled ? 'disabled' : ''}>
+                    <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg');"></span>
+                    <span class="btn-text">Test Telegram Notification</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 function collectConfigMatches(obj, path, categoryName, sections, query, out) {
     let keys = Object.keys(obj);
     const isTiers = path.includes('tiers');
@@ -672,6 +750,10 @@ function collectConfigMatches(obj, path, categoryName, sections, query, out) {
         } else if (Array.isArray(val) && val.length === 2 && typeof val[0] === 'number') {
             if (blob.includes(query)) {
                 out.push({ categoryName, html: renderField(fullPath, { l: key, type: 'range' }, val, true) });
+            }
+        } else if (fullPath === 'security.telegram') {
+            if (blob.includes(query) || query.includes('telegram') || query.includes('bot') || query.includes('token') || query.includes('chat')) {
+                out.push({ categoryName, html: renderTelegramConfigWidget(val, fullPath, true) });
             }
         } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
             collectConfigMatches(val, fullPath, categoryName, [...sections, label], query, out);

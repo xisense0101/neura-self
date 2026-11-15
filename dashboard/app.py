@@ -20,12 +20,19 @@ NeuraSelf-UwU - https://github.com/routo-loop/neura-self
 
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from functools import wraps
+import sys
 import threading
 import time
 import json
 import logging
 import os
+import requests
 import secrets
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import core.state as state
 import utils.utils as utils
 import asyncio
@@ -330,10 +337,33 @@ def settings():
         config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
         
     if request.method == 'POST':
-        new_config = request.json
+        new_config = request.json or {}
         try:
             save_to_all = request.args.get('all_accounts') == 'true' or request.args.get('all') == 'true'
             
+            # Ensure security.telegram is preserved or populated
+            if isinstance(new_config, dict):
+                sec = new_config.setdefault('security', {})
+                if isinstance(sec, dict):
+                    if 'telegram' not in sec or not isinstance(sec['telegram'], dict):
+                        target_file = config_path if os.path.exists(config_path) else os.path.join(state.CONFIG_DIR, 'settings.json')
+                        existing_tg = None
+                        if os.path.exists(target_file):
+                            try:
+                                with open(target_file, 'r', encoding='utf-8') as ef:
+                                    existing_tg = json.load(ef).get('security', {}).get('telegram')
+                            except Exception:
+                                pass
+                        sec['telegram'] = existing_tg or {
+                            "enabled": False,
+                            "bot_token": "",
+                            "chat_id": ""
+                        }
+                    else:
+                        sec['telegram'].setdefault('enabled', False)
+                        sec['telegram'].setdefault('bot_token', '')
+                        sec['telegram'].setdefault('chat_id', '')
+
             if save_to_all:
                 global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
                 with open(global_path, 'w') as f:
@@ -365,17 +395,27 @@ def settings():
             return jsonify({"status": "error", "message": str(e)}), 500
     else:
         try:
+            data = {}
             if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return jsonify(protect_large_ints(data))
 
             elif account_id:
                 global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
                 if os.path.exists(global_path):
-                    with open(global_path, 'r') as f:
-                        return jsonify(protect_large_ints(json.load(f)))
-            return jsonify({})
+                    with open(global_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+            if isinstance(data, dict):
+                sec = data.setdefault('security', {})
+                if isinstance(sec, dict):
+                    tg = sec.setdefault('telegram', {})
+                    if isinstance(tg, dict):
+                        tg.setdefault('enabled', False)
+                        tg.setdefault('bot_token', '')
+                        tg.setdefault('chat_id', '')
+
+            return jsonify(protect_large_ints(data))
         except:
             return jsonify({})
 
@@ -542,9 +582,65 @@ def test_security():
         asyncio.run_coroutine_threadsafe(sec.play_beep(), bot.loop)
         sec._show_desktop_notification("Test: Neura Security Alert working!")
         sec._send_webhook("SYSTEM TEST", "This is a test of your security notification system. All systems are operational.")
+        sec._send_telegram("SYSTEM TEST", "This is a test of your security notification system. All systems are operational.")
         return jsonify({'status': 'success', 'message': 'Test signals sent'})
     
     return jsonify({'status': 'error', 'message': 'Security module not loaded'}), 500
+
+@app.route('/api/telegram/test', methods=['POST'])
+@login_required
+def test_telegram():
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        bot_token = data.get('bot_token') or request.args.get('bot_token')
+        chat_id = data.get('chat_id') or request.args.get('chat_id')
+        account_id = request.args.get('id') or data.get('id')
+
+        # Fall back to saved config if not provided in JSON request
+        if not bot_token or not chat_id:
+            cfg = {}
+            config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json') if account_id else os.path.join(state.CONFIG_DIR, 'settings.json')
+            if not os.path.exists(config_path):
+                config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        cfg = json.load(f)
+                except Exception:
+                    pass
+
+            tg_cfg = cfg.get('security', {}).get('telegram', {})
+            if not bot_token:
+                bot_token = tg_cfg.get('bot_token')
+            if not chat_id:
+                chat_id = tg_cfg.get('chat_id')
+
+        if not bot_token or not chat_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing bot_token or chat_id (neither provided in request nor found in settings)"
+            }), 400
+
+        text = "🔔 *NeuraSelf Test Alert*\nTelegram notifications are working successfully!"
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown"
+        }
+
+        resp = requests.post(url, json=payload, timeout=10)
+        if not resp.ok:
+            try:
+                err_info = resp.json().get('description', resp.text)
+            except Exception:
+                err_info = resp.text
+            return jsonify({"success": False, "error": f"Telegram API error: {err_info}"}), 400
+
+        return jsonify({"success": True, "message": "Test notification sent successfully!"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/control', methods=['POST'])
 @login_required
@@ -882,3 +978,8 @@ def clear_captcha_challenge(account_id):
     if account_id in _pending_captchas:
         _pending_captchas.pop(account_id, None)
         state.log_command("SEC", f"Captcha challenge cleared for account {account_id}", "info")
+
+if __name__ == '__main__':
+    print("[NeuraSelf] Starting Web Dashboard on http://localhost:8000")
+    app.run(host='0.0.0.0', port=8000, debug=False)
+

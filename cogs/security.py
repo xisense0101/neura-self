@@ -40,6 +40,9 @@ class Security(commands.Cog):
         self.notifications_enabled = cfg.get('notifications', {}).get('enabled', True)
         self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Neura Security Alert")
         self.webhook_url = cfg.get('webhook_url')
+        self.telegram_enabled = cfg.get('telegram', {}).get('enabled', False)
+        self.telegram_bot_token = cfg.get('telegram', {}).get('bot_token', '')
+        self.telegram_chat_id = cfg.get('telegram', {}).get('chat_id', '')
         self.monitor_id = str(bot.config.get('core', {}).get('monitor_bot_id', '408785106942164992'))
         self.beep_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "beeps", "security_beep.mp3")
         self.ban_keywords = [
@@ -77,6 +80,9 @@ class Security(commands.Cog):
         self.notifications_enabled = cfg.get('notifications', {}).get('enabled', True)
         self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Neura Security Alert")
         self.webhook_url = cfg.get('webhook_url')
+        self.telegram_enabled = cfg.get('telegram', {}).get('enabled', False)
+        self.telegram_bot_token = cfg.get('telegram', {}).get('bot_token', '')
+        self.telegram_chat_id = cfg.get('telegram', {}).get('chat_id', '')
         self.monitor_id = str(self.bot.config.get('core', {}).get('monitor_bot_id', '408785106942164992'))
         self.bot.log("SYS", "Security Module settings refreshed (Live Sync).")
 
@@ -144,6 +150,39 @@ class Security(commands.Cog):
         except:
             pass
 
+    def _send_telegram(self, title, message):
+        cfg = self.bot.config.get('security', {}).get('telegram', {})
+        enabled = cfg.get('enabled', self.telegram_enabled)
+        bot_token = cfg.get('bot_token', self.telegram_bot_token)
+        chat_id = cfg.get('chat_id', self.telegram_chat_id)
+        if not enabled or not bot_token or not chat_id:
+            return
+
+        username = getattr(self.bot, 'username', 'Bot')
+        formatted_text = f"🚨 *[NeuraSelf Alert]* {title}\n*Account:* {username}\n\n{message}"
+        payload = {
+            "chat_id": chat_id,
+            "text": formatted_text,
+            "parse_mode": "Markdown"
+        }
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+        def _post():
+            try:
+                resp = requests.post(url, json=payload, timeout=5)
+                if not resp.ok:
+                    fallback_payload = {
+                        "chat_id": chat_id,
+                        "text": f"🚨 [NeuraSelf Alert] {title}\nAccount: {username}\n\n{message}"
+                    }
+                    retry_resp = requests.post(url, json=fallback_payload, timeout=5)
+                    if not retry_resp.ok:
+                        self.bot.log("ERROR", f"Telegram API error: {retry_resp.text}")
+            except Exception as e:
+                self.bot.log("ERROR", f"Failed to send Telegram alert: {e}")
+
+        threading.Thread(target=_post, daemon=True).start()
+
     async def play_beep(self):
         def _play():
             if not os.path.exists(self.beep_file):
@@ -200,6 +239,8 @@ class Security(commands.Cog):
                     grinding_cog.cooldowns['owo'] = 0
                 self.bot.log("SUCCESS", "Verified detected in DM. Captcha solved successfully. Resuming...")
                 self.bot.log("INFO", "All cooldowns reset. Bot will resume in 2 seconds...")
+                self._send_webhook("CAPTCHA SOLVED", "Verified detected in DM. Captcha solved successfully. Resuming...")
+                self._send_telegram("CAPTCHA SOLVED", "Verified detected in DM. Captcha solved successfully. Resuming...")
                 await asyncio.sleep(2)
                 return
 
@@ -208,6 +249,8 @@ class Security(commands.Cog):
                 count_match = re.search(r'(\d+)\s*letterword', message.content.lower())
                 letter_count = int(count_match.group(1)) if count_match else 5
                 image_url = message.attachments[0].url
+                self._send_webhook("DM IMAGE CAPTCHA DETECTED", f"Letterword captcha in DM ({letter_count} letters):\n{image_url}")
+                self._send_telegram("DM IMAGE CAPTCHA DETECTED", f"Letterword captcha in DM ({letter_count} letters):\n{image_url}")
                 self.bot.log("SYS", f"Attempting to solve DM Captcha ({letter_count} letters)...")
                 answer = await self.bot.captcha_solver.solve_image(image_url, letter_count)
                 if answer:
@@ -216,11 +259,15 @@ class Security(commands.Cog):
                     async with message.channel.typing():
                         await asyncio.sleep(len(answer) * 0.1)
                         await message.channel.send(answer)
+                    self._send_webhook("IMAGE CAPTCHA SOLVED", f"AI Solver answered DM letterword: {answer}")
+                    self._send_telegram("IMAGE CAPTCHA SOLVED", f"AI Solver answered DM letterword: {answer}")
                 else:
                     self.bot.log("ERROR", "AI Solver failed to generate an answer. Pausing bot.")
                     self.bot.paused = True
                     self.bot.throttle_until = float('inf')
                     self._show_desktop_notification("AI Solver failed! Solve manually.")
+                    self._send_webhook("AI SOLVER FAILED", "AI Solver failed to generate an answer for DM letterword captcha. Manual solve required: https://owobot.com/captcha")
+                    self._send_telegram("AI SOLVER FAILED", "AI Solver failed to generate an answer for DM letterword captcha. Manual solve required: https://owobot.com/captcha")
                     self.bot.web_solver.enqueue_manual_solve(str(self.bot.user.id), "https://owobot.com/captcha")
                 return
 
@@ -272,12 +319,17 @@ class Security(commands.Cog):
                         self.bot._solving_captcha = False
                         self.bot.log("SUCCESS", f"{service_name} solved successfully (DM)!")
                         self._show_desktop_notification(f"{service_name} solved successfully!")
+                        self._send_webhook("CAPTCHA SOLVED", f"{service_name} solved captcha successfully (DM)!")
+                        self._send_telegram("CAPTCHA SOLVED", f"{service_name} solved captcha successfully (DM)!")
                     else:
                         self.bot.log("ERROR", f"{service_name} auto-solve failed (DM)!")
                         self._show_desktop_notification(f"{service_name} failed! Solve manually.")
+                        self._send_webhook("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed (DM)! Manual solve required: {captcha_url}")
+                        self._send_telegram("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed (DM)! Manual solve required: {captcha_url}")
 
                 if not autosolved:
                     self._send_webhook("DM CAPTCHA", f"Solve link in DM: {captcha_url}")
+                    self._send_telegram("DM CAPTCHA", f"Solve link in DM: {captcha_url}")
                     if not getattr(self.bot, 'is_mobile', False):
                         auto_open = sec_cfg.get("open_captcha_url_on_pc", False)
                     else:
@@ -330,6 +382,7 @@ class Security(commands.Cog):
             await self.play_beep()
             self._show_desktop_notification("Ban detected!")
             self._send_webhook("BAN DETECTED", f"Message:\n{content}")
+            self._send_telegram("BAN DETECTED", f"Message:\n{content}")
             return
 
         warning_match = self.warning_pattern.search(text_to_check)
@@ -351,6 +404,7 @@ class Security(commands.Cog):
                 await self.play_beep()
                 self._show_desktop_notification(f"Captcha warning {current_warning}/{max_warnings} detected!")
                 self._send_webhook("CAPTCHA WARNING", f"Warning {current_warning}/{max_warnings}\nMessage:\n{content}")
+                self._send_telegram("CAPTCHA WARNING", f"Warning {current_warning}/{max_warnings}\nMessage:\n{content}")
 
                 if captcha_url:
                     sec_cfg = self.bot.config.get("security", {})
@@ -389,13 +443,18 @@ class Security(commands.Cog):
                             self.bot._solving_captcha = False
                             self.bot.log("SUCCESS", f"{service_name} solved successfully!")
                             self._show_desktop_notification(f"{service_name} solved successfully!")
+                            self._send_webhook("CAPTCHA SOLVED", f"{service_name} solved captcha warning successfully!")
+                            self._send_telegram("CAPTCHA SOLVED", f"{service_name} solved captcha warning successfully!")
                         else:
                             self.bot.log("ERROR", f"{service_name} auto-solve failed!")
                             self._show_desktop_notification(f"{service_name} failed! Solve manually.")
+                            self._send_webhook("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed for warning! Manual solve required: {captcha_url or 'https://owobot.com/captcha'}")
+                            self._send_telegram("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed for warning! Manual solve required: {captcha_url or 'https://owobot.com/captcha'}")
 
                     if not autosolved:
                         solve_link = captcha_url or "https://owobot.com/captcha"
                         self._send_webhook("CAPTCHA WARNING", f"Solve: {solve_link}")
+                        self._send_telegram("CAPTCHA WARNING", f"Solve: {solve_link}")
                         if not getattr(self.bot, 'is_mobile', False):
                             auto_open = sec_cfg.get("open_captcha_url_on_pc", False)
                         else:
@@ -417,6 +476,7 @@ class Security(commands.Cog):
             self._show_desktop_notification("Image captcha detected! Check DMs.")
             img_urls = "\n".join([att.url for att in message.attachments])
             self._send_webhook("IMAGE CAPTCHA DETECTED", f"Message:\n{content}\n\nImages:\n{img_urls}")
+            self._send_telegram("IMAGE CAPTCHA DETECTED", f"Message:\n{content}\n\nImages:\n{img_urls}")
 
             count_match = re.search(r'(\d+)\s*letterword', text_to_check)
             letter_count = int(count_match.group(1)) if count_match else 5
@@ -428,9 +488,13 @@ class Security(commands.Cog):
 
                 await self.bot.send_message(answer, skip_typing=True, priority=True)
                 self._show_desktop_notification(f"Image captcha solved: {answer}")
+                self._send_webhook("IMAGE CAPTCHA SOLVED", f"AI Solver solved image captcha: {answer}")
+                self._send_telegram("IMAGE CAPTCHA SOLVED", f"AI Solver solved image captcha: {answer}")
             else:
                 self.bot.log("ERROR", "AI Solver failed to generate an answer for image captcha.")
                 self._show_desktop_notification("AI Solver failed! Solve manually.")
+                self._send_webhook("AI SOLVER FAILED", "AI Solver failed to generate an answer for image captcha. Solve manually: https://owobot.com/captcha")
+                self._send_telegram("AI SOLVER FAILED", "AI Solver failed to generate an answer for image captcha. Solve manually: https://owobot.com/captcha")
                 self.bot.web_solver.enqueue_manual_solve(str(self.bot.user.id), "https://owobot.com/captcha")
             return
 
@@ -448,6 +512,8 @@ class Security(commands.Cog):
             self.bot.log("ALARM", "CAPTCHA DETECTED!")
             await self.play_beep()
             self._show_desktop_notification("Captcha detected!")
+            self._send_webhook("CAPTCHA DETECTED", f"Captcha detected in channel! Message:\n{content}")
+            self._send_telegram("CAPTCHA DETECTED", f"Captcha detected in channel! Message:\n{content}")
 
             sec_cfg = self.bot.config.get("security", {})
             sol_cfg = sec_cfg.get("captcha_solver", {})
@@ -485,13 +551,18 @@ class Security(commands.Cog):
                     self.bot._solving_captcha = False
                     self.bot.log("SUCCESS", f"{service_name} solved successfully!")
                     self._show_desktop_notification(f"{service_name} solved successfully!")
+                    self._send_webhook("CAPTCHA SOLVED", f"{service_name} solved captcha successfully!")
+                    self._send_telegram("CAPTCHA SOLVED", f"{service_name} solved captcha successfully!")
                 else:
                     self.bot.log("ERROR", f"{service_name} auto-solve failed!")
                     self._show_desktop_notification(f"{service_name} failed! Solve manually.")
+                    self._send_webhook("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed! Manual solve required: {captcha_url or 'https://owobot.com/captcha'}")
+                    self._send_telegram("CAPTCHA SOLVE FAILED", f"{service_name} auto-solve failed! Manual solve required: {captcha_url or 'https://owobot.com/captcha'}")
 
             if not autosolved:
                 solve_link = captcha_url or "https://owobot.com/captcha"
                 self._send_webhook("CAPTCHA DETECTED", f"Solve: {solve_link}")
+                self._send_telegram("CAPTCHA DETECTED", f"Solve: {solve_link}")
                 if not getattr(self.bot, 'is_mobile', False):
                     auto_open = sec_cfg.get("open_captcha_url_on_pc", False)
                 else:

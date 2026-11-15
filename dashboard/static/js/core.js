@@ -36,7 +36,7 @@ const timeFormatter = new Intl.DateTimeFormat('en-US', {
 const CONFIG_CATEGORY_HINTS = {
     core: 'Channels, prefix, and main bot switches',
     stealth: 'Human-like delays and timing',
-    security: 'Captcha handling and safety pauses',
+    security: 'Captcha handling, Telegram notifications, and safety pauses',
     reactionBot: 'Auto-reactions and triggers',
     boss: 'Boss fight automation',
     level_grind: 'XP grinding behavior',

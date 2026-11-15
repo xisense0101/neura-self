@@ -62,6 +62,7 @@ window.nav = function(id, el) {
     if (id === 'security') {
         fetchSecuritySummary();
         pollForCaptchas();
+        if (typeof populateTelegramSecurityUI === 'function') populateTelegramSecurityUI();
     }
 };
 

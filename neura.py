@@ -77,8 +77,18 @@ def detect_platform():
 def run_dashboard():
     flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
 
+dashboard_started = False
+def ensure_dashboard():
+    global dashboard_started
+    if not dashboard_started:
+        t = threading.Thread(target=run_dashboard, daemon=True)
+        t.start()
+        dashboard_started = True
+        console.print("[bold green]➜ Dashboard running at: http://localhost:8000[/bold green]")
+
 async def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    ensure_dashboard()
     while True:
         show_banner()
         is_termux = detect_platform()
@@ -110,8 +120,7 @@ async def main():
             continue
         import utils.history_tracker as ht
         ht.start_session()
-        dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
-        dashboard_thread.start()
+        ensure_dashboard()
         console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
         bots = []
         tasks = []

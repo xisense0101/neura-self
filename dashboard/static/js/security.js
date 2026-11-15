@@ -51,6 +51,7 @@ async function testSecurity(btn) {
 
 async function fetchSecuritySummary() {
     if (!document.getElementById('security').classList.contains('active-view')) return;
+    if (typeof populateTelegramSecurityUI === 'function') populateTelegramSecurityUI();
     const container = document.getElementById('security-accounts-grid');
     if (!container) return;
     let html = '';
@@ -385,5 +386,230 @@ window.cancelManualSolve = function() {
 };
 
 window.cancelEmbeddedCaptcha = window.cancelManualSolve;
+
+/* =========================================================================
+   TELEGRAM NOTIFICATIONS UI INTEGRATION
+   ========================================================================= */
+
+window.populateTelegramSecurityUI = function() {
+    const tg = currentConfig?.security?.telegram || {};
+    const enabled = tg.enabled === true;
+    const botToken = tg.bot_token || '';
+    const chatId = tg.chat_id || '';
+
+    const tokenInput = document.getElementById('tg-security-bot-token');
+    if (tokenInput && document.activeElement !== tokenInput) {
+        tokenInput.value = botToken;
+    }
+
+    const chatInput = document.getElementById('tg-security-chat-id');
+    if (chatInput && document.activeElement !== chatInput) {
+        chatInput.value = chatId;
+    }
+
+    const toggle = document.getElementById('tg-security-toggle');
+    if (toggle) {
+        toggle.classList.toggle('is-on', enabled);
+        toggle.setAttribute('aria-checked', String(enabled));
+    }
+
+    const statusLabel = document.getElementById('tg-status-label');
+    if (statusLabel) {
+        statusLabel.textContent = enabled ? 'Enabled' : 'Disabled';
+        statusLabel.classList.toggle('active', enabled);
+    }
+
+    const cardBody = document.getElementById('tg-security-card-body');
+    if (cardBody) {
+        cardBody.classList.toggle('disabled-body', !enabled);
+    }
+};
+
+window.toggleTelegramSecurity = function(el, ev) {
+    if (ev) ev.stopPropagation();
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.telegram = currentConfig.security.telegram || {};
+
+    const currentlyOn = el.classList.contains('is-on');
+    const newState = !currentlyOn;
+
+    currentConfig.security.telegram.enabled = newState;
+    el.classList.toggle('is-on', newState);
+    el.setAttribute('aria-checked', String(newState));
+
+    const statusLabel = document.getElementById('tg-status-label');
+    if (statusLabel) {
+        statusLabel.textContent = newState ? 'Enabled' : 'Disabled';
+        statusLabel.classList.toggle('active', newState);
+    }
+
+    const cardBody = document.getElementById('tg-security-card-body');
+    if (cardBody) {
+        cardBody.classList.toggle('disabled-body', !newState);
+    }
+
+    checkDirty();
+
+    // If config tab is active, sync its rendered view
+    const configView = document.getElementById('config');
+    if (configView && configView.classList.contains('active-view')) {
+        renderSettings(currentConfig);
+    }
+};
+
+window.onTelegramFieldChange = function(field, val) {
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.telegram = currentConfig.security.telegram || {};
+
+    currentConfig.security.telegram[field] = val;
+    checkDirty();
+
+    // Sync to config tab matching field if open
+    const cfgField = document.getElementById(`cfg-tg-${field}`);
+    if (cfgField && cfgField.value !== val) {
+        cfgField.value = val;
+    }
+};
+
+window.toggleTokenVisibility = function(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+
+    const showIcon = btn.querySelector('.eye-icon-show');
+    const hideIcon = btn.querySelector('.eye-icon-hide');
+    if (showIcon && hideIcon) {
+        showIcon.style.display = isPassword ? 'none' : 'block';
+        hideIcon.style.display = isPassword ? 'block' : 'none';
+    }
+};
+
+window.testTelegramNotification = async function(btn) {
+    const originalContent = btn.innerHTML;
+    let botToken = '';
+    let chatId = '';
+
+    // Check Security Tab inputs
+    const secTokenInput = document.getElementById('tg-security-bot-token');
+    const secChatInput = document.getElementById('tg-security-chat-id');
+    if (secTokenInput && secTokenInput.value) botToken = secTokenInput.value.trim();
+    if (secChatInput && secChatInput.value) chatId = secChatInput.value.trim();
+
+    // Fallback to Config Tab inputs if empty
+    if (!botToken) {
+        const cfgTokenInput = document.getElementById('cfg-tg-bot_token');
+        if (cfgTokenInput && cfgTokenInput.value) botToken = cfgTokenInput.value.trim();
+    }
+    if (!chatId) {
+        const cfgChatInput = document.getElementById('cfg-tg-chat_id');
+        if (cfgChatInput && cfgChatInput.value) chatId = cfgChatInput.value.trim();
+    }
+
+    // Fallback to currentConfig object if still empty
+    if (!botToken && currentConfig?.security?.telegram?.bot_token) {
+        botToken = String(currentConfig.security.telegram.bot_token).trim();
+    }
+    if (!chatId && currentConfig?.security?.telegram?.chat_id) {
+        chatId = String(currentConfig.security.telegram.chat_id).trim();
+    }
+
+    if (!botToken || !chatId) {
+        showToast('Please enter both Bot Token and Chat ID to test.', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg'); animation: spin 1s linear infinite;"></span> <span class="btn-text">Sending Test...</span>`;
+
+    try {
+        const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+        const res = await fetch(`/api/telegram/test${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bot_token: botToken,
+                chat_id: chatId,
+                id: currentAccountId
+            })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && (data.success === true || data.status === 'success')) {
+            showToast(data.message || 'Telegram test notification sent successfully!', 'success');
+            btn.style.borderColor = 'var(--success)';
+            btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/check.svg'); background-color: var(--success);"></span> <span class="btn-text">Sent!</span>`;
+        } else {
+            const err = data.error || data.message || `HTTP ${res.status}: Request failed`;
+            showToast(`Telegram Test Failed: ${err}`, 'error');
+            btn.style.borderColor = 'var(--danger)';
+            btn.innerHTML = `✕ Test Failed`;
+        }
+    } catch (e) {
+        showToast(`Request error: ${e.message || e}`, 'error');
+        btn.style.borderColor = 'var(--danger)';
+        btn.innerHTML = `✕ Error`;
+    } finally {
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+            btn.style.borderColor = '';
+        }, 3500);
+    }
+};
+
+window.saveTelegramSettings = async function(btn) {
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.telegram = currentConfig.security.telegram || {};
+
+    const secTokenInput = document.getElementById('tg-security-bot-token');
+    const secChatInput = document.getElementById('tg-security-chat-id');
+    if (secTokenInput) {
+        currentConfig.security.telegram.bot_token = secTokenInput.value.trim();
+    }
+    if (secChatInput) {
+        currentConfig.security.telegram.chat_id = secChatInput.value.trim();
+    }
+
+    const originalContent = btn ? btn.innerHTML : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg'); animation: spin 1s linear infinite;"></span> <span class="btn-text">Saving...</span>`;
+    }
+
+    const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+    try {
+        const res = await fetch(`/api/settings${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentConfig)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && (data.status === 'success' || data.success === true)) {
+            originalConfig = JSON.parse(JSON.stringify(currentConfig));
+            checkDirty();
+            showToast('Telegram settings saved successfully!', 'success');
+            if (btn) {
+                btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/check.svg'); background-color: var(--success);"></span> <span class="btn-text">Saved!</span>`;
+            }
+        } else {
+            showToast(`Failed to save settings: ${data.message || data.error || 'Unknown error'}`, 'error');
+            if (btn) btn.innerHTML = `✕ Error`;
+        }
+    } catch (e) {
+        showToast(`Failed to save settings: ${e.message || e}`, 'error');
+        if (btn) btn.innerHTML = `✕ Error`;
+    } finally {
+        if (btn) {
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }, 2500);
+        }
+    }
+};
 
 startPendingTimer();
