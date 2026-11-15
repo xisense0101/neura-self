@@ -348,6 +348,53 @@
     color: #fff;
 }
 
+/* Filter tabs for Security page */
+.sec-filter-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.sec-tab-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sec-tab-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+.sec-tab-pill.active {
+    background: var(--primary);
+    color: #000;
+    border-color: var(--primary);
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+}
+
+/* Card variants */
+.sec-card-captcha { border-left-color: #f59e0b !important; }
+.sec-card-captcha:hover { border-color: rgba(245, 158, 11, 0.5) !important; box-shadow: 0 10px 30px rgba(245, 158, 11, 0.1) !important; }
+
+.sec-card-webhook { border-left-color: #5865f2 !important; }
+.sec-card-webhook:hover { border-color: rgba(88, 101, 242, 0.5) !important; box-shadow: 0 10px 30px rgba(88, 101, 242, 0.1) !important; }
+
+.sec-card-alerts { border-left-color: #10b981 !important; }
+.sec-card-alerts:hover { border-color: rgba(16, 185, 129, 0.5) !important; box-shadow: 0 10px 30px rgba(16, 185, 129, 0.1) !important; }
+
+.badge-amber { background: rgba(245, 158, 11, 0.15) !important; border-color: rgba(245, 158, 11, 0.3) !important; }
+.badge-discord { background: rgba(88, 101, 242, 0.15) !important; border-color: rgba(88, 101, 242, 0.3) !important; }
+.badge-emerald { background: rgba(16, 185, 129, 0.15) !important; border-color: rgba(16, 185, 129, 0.3) !important; }
+
 /* Telegram Notifications Card */
 .telegram-security-card {
     background: linear-gradient(145deg, #181820 0%, #101014 100%);

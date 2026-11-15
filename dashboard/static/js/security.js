@@ -388,42 +388,350 @@ window.cancelManualSolve = function() {
 window.cancelEmbeddedCaptcha = window.cancelManualSolve;
 
 /* =========================================================================
-   TELEGRAM NOTIFICATIONS UI INTEGRATION
+   SECURITY MODULES UI INTEGRATION (CAPTCHA, TELEGRAM, WEBHOOK, ALERTS)
    ========================================================================= */
 
-window.populateTelegramSecurityUI = function() {
-    const tg = currentConfig?.security?.telegram || {};
-    const enabled = tg.enabled === true;
-    const botToken = tg.bot_token || '';
-    const chatId = tg.chat_id || '';
+window.switchSecCardFilter = function(filter, btn) {
+    document.querySelectorAll('.sec-tab-pill').forEach(p => p.classList.remove('active'));
+    if (btn) btn.classList.add('active');
 
-    const tokenInput = document.getElementById('tg-security-bot-token');
-    if (tokenInput && document.activeElement !== tokenInput) {
-        tokenInput.value = botToken;
-    }
+    const cCaptcha = document.getElementById('sec-card-captcha');
+    const cTg = document.getElementById('telegram-security-card');
+    const cWh = document.getElementById('sec-card-webhook');
+    const cAlerts = document.getElementById('sec-card-alerts');
 
-    const chatInput = document.getElementById('tg-security-chat-id');
-    if (chatInput && document.activeElement !== chatInput) {
-        chatInput.value = chatId;
-    }
-
-    const toggle = document.getElementById('tg-security-toggle');
-    if (toggle) {
-        toggle.classList.toggle('is-on', enabled);
-        toggle.setAttribute('aria-checked', String(enabled));
-    }
-
-    const statusLabel = document.getElementById('tg-status-label');
-    if (statusLabel) {
-        statusLabel.textContent = enabled ? 'Enabled' : 'Disabled';
-        statusLabel.classList.toggle('active', enabled);
-    }
-
-    const cardBody = document.getElementById('tg-security-card-body');
-    if (cardBody) {
-        cardBody.classList.toggle('disabled-body', !enabled);
+    if (filter === 'all') {
+        if (cCaptcha) cCaptcha.style.display = '';
+        if (cTg) cTg.style.display = '';
+        if (cWh) cWh.style.display = '';
+        if (cAlerts) cAlerts.style.display = '';
+    } else {
+        if (cCaptcha) cCaptcha.style.display = filter === 'captcha' ? '' : 'none';
+        if (cTg) cTg.style.display = filter === 'telegram' ? '' : 'none';
+        if (cWh) cWh.style.display = filter === 'webhook' ? '' : 'none';
+        if (cAlerts) cAlerts.style.display = filter === 'alerts' ? '' : 'none';
     }
 };
+
+window.populateAllSecurityUI = function() {
+    if (!currentConfig || !currentConfig.security) return;
+    const sec = currentConfig.security;
+
+    // 1. Telegram
+    const tg = sec.telegram || {};
+    const tgEnabled = tg.enabled === true;
+    const tokenInput = document.getElementById('tg-security-bot-token');
+    if (tokenInput && document.activeElement !== tokenInput) tokenInput.value = tg.bot_token || '';
+    const chatInput = document.getElementById('tg-security-chat-id');
+    if (chatInput && document.activeElement !== chatInput) chatInput.value = tg.chat_id || '';
+    const tgToggle = document.getElementById('tg-security-toggle');
+    if (tgToggle) {
+        tgToggle.classList.toggle('is-on', tgEnabled);
+        tgToggle.setAttribute('aria-checked', String(tgEnabled));
+    }
+    const tgStatusLabel = document.getElementById('tg-status-label');
+    if (tgStatusLabel) {
+        tgStatusLabel.textContent = tgEnabled ? 'Enabled' : 'Disabled';
+        tgStatusLabel.classList.toggle('active', tgEnabled);
+    }
+    const tgBody = document.getElementById('tg-security-card-body');
+    if (tgBody) tgBody.classList.toggle('disabled-body', !tgEnabled);
+
+    // 2. Captcha Solver
+    const cs = sec.captcha_solver || {};
+    const csEnabled = cs.enabled !== false;
+    const solverToggle = document.getElementById('sec-solver-toggle');
+    if (solverToggle) {
+        solverToggle.classList.toggle('is-on', csEnabled);
+        solverToggle.setAttribute('aria-checked', String(csEnabled));
+    }
+    const csStatusLabel = document.getElementById('sec-solver-status-label');
+    if (csStatusLabel) {
+        csStatusLabel.textContent = csEnabled ? 'Enabled' : 'Disabled';
+        csStatusLabel.classList.toggle('active', csEnabled);
+    }
+    const csBody = document.getElementById('sec-solver-card-body');
+    if (csBody) csBody.classList.toggle('disabled-body', !csEnabled);
+
+    const svc = (cs.service || 'yescaptcha').toLowerCase();
+    const svcSelect = document.getElementById('sec-solver-service-select');
+    if (svcSelect) svcSelect.value = svc;
+
+    const svcInfo = CAPTCHA_SERVICES[svc] || CAPTCHA_SERVICES.yescaptcha;
+    const keyInput = document.getElementById('sec-solver-api-key');
+    if (keyInput && document.activeElement !== keyInput) {
+        keyInput.value = cs[svcInfo.keyField] || '';
+    }
+    const keyLabel = document.getElementById('sec-solver-key-label');
+    if (keyLabel) keyLabel.textContent = `${svcInfo.label} API Key`;
+    const hintLabel = document.getElementById('sec-solver-hint');
+    if (hintLabel) hintLabel.textContent = svcInfo.hint;
+
+    // 3. Webhook
+    const wh = sec.webhook || {};
+    const whEnabled = wh.enabled !== false;
+    const whToggle = document.getElementById('sec-webhook-toggle');
+    if (whToggle) {
+        whToggle.classList.toggle('is-on', whEnabled);
+        whToggle.setAttribute('aria-checked', String(whEnabled));
+    }
+    const whStatusLabel = document.getElementById('sec-webhook-status-label');
+    if (whStatusLabel) {
+        whStatusLabel.textContent = whEnabled ? 'Enabled' : 'Disabled';
+        whStatusLabel.classList.toggle('active', whEnabled);
+    }
+    const whBody = document.getElementById('sec-webhook-card-body');
+    if (whBody) whBody.classList.toggle('disabled-body', !whEnabled);
+    const whInput = document.getElementById('sec-webhook-url');
+    if (whInput && document.activeElement !== whInput) {
+        whInput.value = wh.url || '';
+    }
+
+    // 4. Alerts & Notifications
+    const notifs = sec.notifications || {};
+    const desk = notifs.desktop || {};
+    const mob = notifs.mobile || {};
+
+    const deskNotifToggle = document.getElementById('sec-desktop-notif-toggle');
+    if (deskNotifToggle) deskNotifToggle.classList.toggle('is-on', desk.enabled !== false);
+
+    const deskSoundToggle = document.getElementById('sec-desktop-sound-toggle');
+    if (deskSoundToggle) deskSoundToggle.classList.toggle('is-on', desk.sound !== false);
+
+    const termuxVibrateToggle = document.getElementById('sec-termux-vibrate-toggle');
+    if (termuxVibrateToggle) termuxVibrateToggle.classList.toggle('is-on', mob.vibrate?.enabled !== false);
+
+    const openPcToggle = document.getElementById('sec-open-pc-toggle');
+    if (openPcToggle) openPcToggle.classList.toggle('is-on', sec.open_captcha_url_on_pc !== false);
+};
+
+window.populateTelegramSecurityUI = window.populateAllSecurityUI;
+
+window.toggleSecSolver = function(el, ev) {
+    if (ev) ev.stopPropagation();
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.captcha_solver = currentConfig.security.captcha_solver || {};
+    const on = el.classList.contains('is-on');
+    currentConfig.security.captcha_solver.enabled = !on;
+    el.classList.toggle('is-on', !on);
+    const lbl = document.getElementById('sec-solver-status-label');
+    if (lbl) {
+        lbl.textContent = !on ? 'Enabled' : 'Disabled';
+        lbl.classList.toggle('active', !on);
+    }
+    const body = document.getElementById('sec-solver-card-body');
+    if (body) body.classList.toggle('disabled-body', on);
+    checkDirty();
+};
+
+window.onSecSolverServiceChange = function(svc) {
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.captcha_solver = currentConfig.security.captcha_solver || {};
+    currentConfig.security.captcha_solver.service = svc;
+
+    const svcInfo = CAPTCHA_SERVICES[svc] || CAPTCHA_SERVICES.yescaptcha;
+    const keyInput = document.getElementById('sec-solver-api-key');
+    if (keyInput) {
+        keyInput.value = currentConfig.security.captcha_solver[svcInfo.keyField] || '';
+    }
+    const keyLabel = document.getElementById('sec-solver-key-label');
+    if (keyLabel) keyLabel.textContent = `${svcInfo.label} API Key`;
+    const hintLabel = document.getElementById('sec-solver-hint');
+    if (hintLabel) hintLabel.textContent = svcInfo.hint;
+    checkDirty();
+};
+
+window.onSecSolverKeyChange = function(val) {
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.captcha_solver = currentConfig.security.captcha_solver || {};
+    const svc = (currentConfig.security.captcha_solver.service || 'yescaptcha').toLowerCase();
+    const svcInfo = CAPTCHA_SERVICES[svc] || CAPTCHA_SERVICES.yescaptcha;
+    currentConfig.security.captcha_solver[svcInfo.keyField] = val.trim();
+    checkDirty();
+};
+
+window.fetchCaptchaBalanceSec = async function() {
+    const badge = document.getElementById('sec-csw-balance-badge');
+    const balText = document.getElementById('sec-csw-balance-text');
+    if (!badge || !balText) return;
+    balText.textContent = 'Checking…';
+    badge.className = 'csw-balance-badge loading';
+    try {
+        const q = currentAccountId ? `?id=${currentAccountId}` : '';
+        const selectedService = currentConfig?.security?.captcha_solver?.service || 'yescaptcha';
+        const svcInfo = CAPTCHA_SERVICES[selectedService] || CAPTCHA_SERVICES.yescaptcha;
+        const currentKey = currentConfig?.security?.captcha_solver?.[svcInfo.keyField] || '';
+        const res = await fetch(`/api/captcha/balance${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service: selectedService, api_key: currentKey })
+        });
+        const d = await res.json();
+        if (d.error || d.balance === null || d.balance === undefined) {
+            balText.textContent = d.message || d.error || 'Check API key';
+            badge.className = 'csw-balance-badge error';
+        } else {
+            let balance = d.balance;
+            let unit = svcInfo.balanceUnit;
+            let display = typeof balance === 'number' ? (unit === '$' ? `$${balance.toFixed(2)}` : `${Math.round(balance).toLocaleString()} ${unit}`) : String(balance);
+            balText.textContent = display;
+            badge.className = 'csw-balance-badge ok';
+        }
+    } catch (e) {
+        balText.textContent = 'Request failed';
+        badge.className = 'csw-balance-badge error';
+    }
+};
+
+window.saveCaptchaSecuritySettings = async function(btn) {
+    await ensureCurrentConfigLoaded();
+    await saveSecuritySection(btn, {
+        security: {
+            captcha_solver: currentConfig.security.captcha_solver
+        }
+    }, 'Captcha settings saved successfully!');
+};
+
+window.toggleSecWebhook = function(el, ev) {
+    if (ev) ev.stopPropagation();
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.webhook = currentConfig.security.webhook || {};
+    const on = el.classList.contains('is-on');
+    currentConfig.security.webhook.enabled = !on;
+    el.classList.toggle('is-on', !on);
+    const lbl = document.getElementById('sec-webhook-status-label');
+    if (lbl) {
+        lbl.textContent = !on ? 'Enabled' : 'Disabled';
+        lbl.classList.toggle('active', !on);
+    }
+    const body = document.getElementById('sec-webhook-card-body');
+    if (body) body.classList.toggle('disabled-body', on);
+    checkDirty();
+};
+
+window.onSecWebhookUrlChange = function(val) {
+    currentConfig = currentConfig || {};
+    currentConfig.security = currentConfig.security || {};
+    currentConfig.security.webhook = currentConfig.security.webhook || {};
+    currentConfig.security.webhook.url = val.trim();
+    checkDirty();
+};
+
+window.testWebhookNotification = async function(btn) {
+    const originalContent = btn.innerHTML;
+    let url = document.getElementById('sec-webhook-url')?.value?.trim() || currentConfig?.security?.webhook?.url || '';
+    if (!url) {
+        showToast('Please enter a Discord Webhook URL first.', 'error');
+        return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg'); animation: spin 1s linear infinite;"></span> <span class="btn-text">Testing...</span>`;
+    try {
+        const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+        const res = await fetch(`/api/webhook/test${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ webhook_url: url })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+            showToast('Discord Webhook test alert delivered successfully!', 'success');
+            btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/check.svg'); background-color: var(--success);"></span> <span class="btn-text">Sent!</span>`;
+        } else {
+            showToast(`Webhook test failed: ${data.error || 'Invalid webhook URL'}`, 'error');
+            btn.innerHTML = `✕ Test Failed`;
+        }
+    } catch (e) {
+        showToast(`Request error: ${e.message || e}`, 'error');
+        btn.innerHTML = `✕ Error`;
+    } finally {
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+        }, 3500);
+    }
+};
+
+window.saveWebhookSecuritySettings = async function(btn) {
+    await ensureCurrentConfigLoaded();
+    await saveSecuritySection(btn, {
+        security: {
+            webhook: currentConfig.security.webhook
+        }
+    }, 'Discord Webhook settings saved successfully!');
+};
+
+window.toggleSecSimple = function(path, el) {
+    currentConfig = currentConfig || {};
+    const on = el.classList.contains('is-on');
+    setDeep(currentConfig, `security.${path}`.split('.'), !on);
+    el.classList.toggle('is-on', !on);
+    checkDirty();
+};
+
+window.saveAlertsSecuritySettings = async function(btn) {
+    await ensureCurrentConfigLoaded();
+    await saveSecuritySection(btn, {
+        security: {
+            notifications: currentConfig.security.notifications,
+            open_captcha_url_on_pc: currentConfig.security.open_captcha_url_on_pc
+        }
+    }, 'Sound & system alarm settings saved successfully!');
+};
+
+async function ensureCurrentConfigLoaded() {
+    if (!currentConfig || Object.keys(currentConfig).length <= 1) {
+        try {
+            const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+            const cfgRes = await fetch(`/api/settings${q}`);
+            if (cfgRes.ok) {
+                currentConfig = await cfgRes.json();
+            }
+        } catch (e) {}
+    }
+}
+
+async function saveSecuritySection(btn, payload, successMsg) {
+    const originalContent = btn ? btn.innerHTML : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg'); animation: spin 1s linear infinite;"></span> <span class="btn-text">Saving...</span>`;
+    }
+    const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+    try {
+        const res = await fetch(`/api/settings${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && (data.status === 'success' || data.success === true)) {
+            originalConfig = JSON.parse(JSON.stringify(currentConfig));
+            checkDirty();
+            showToast(successMsg, 'success');
+            if (btn) {
+                btn.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/check.svg'); background-color: var(--success);"></span> <span class="btn-text">Saved!</span>`;
+            }
+        } else {
+            showToast(`Failed to save: ${data.message || data.error || 'Unknown error'}`, 'error');
+            if (btn) btn.innerHTML = `✕ Error`;
+        }
+    } catch (e) {
+        showToast(`Failed to save: ${e.message || e}`, 'error');
+        if (btn) btn.innerHTML = `✕ Error`;
+    } finally {
+        if (btn) {
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }, 2500);
+        }
+    }
+}
 
 window.toggleTelegramSecurity = function(el, ev) {
     if (ev) ev.stopPropagation();

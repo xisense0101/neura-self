@@ -650,6 +650,54 @@ def test_telegram():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/webhook/test', methods=['POST'])
+@login_required
+def test_webhook():
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        webhook_url = data.get('webhook_url') or request.args.get('webhook_url')
+        account_id = request.args.get('id') or data.get('id')
+
+        if not webhook_url:
+            config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json') if account_id else os.path.join(state.CONFIG_DIR, 'settings.json')
+            if not os.path.exists(config_path):
+                config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        cfg = json.load(f)
+                        webhook_url = cfg.get('security', {}).get('webhook', {}).get('url')
+                except Exception:
+                    pass
+
+        if not webhook_url or "Your-own-discord-webhook" in str(webhook_url):
+            return jsonify({
+                "success": False,
+                "error": "Please provide a valid Discord Webhook URL"
+            }), 400
+
+        payload = {
+            "embeds": [{
+                "title": "🔔 NeuraSelf Webhook Test",
+                "description": "Discord Webhook alerts are connected and working properly!",
+                "color": 0x5865F2,
+                "author": {
+                    "name": "NeuraSelf Security Alert",
+                    "icon_url": "https://media.discordapp.net/attachments/1357951011456684252/1524069544401047773/neuralogo.png"
+                },
+                "footer": {"text": "NeuraSelf • Security System Test"},
+                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S')
+            }]
+        }
+        resp = requests.post(webhook_url, json=payload, timeout=8)
+        if resp.status_code in [200, 204]:
+            return jsonify({"success": True, "message": "Test webhook delivered successfully!"})
+        else:
+            return jsonify({"success": False, "error": f"Discord returned HTTP {resp.status_code}: {resp.text}"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/control', methods=['POST'])
 @login_required
 def control():

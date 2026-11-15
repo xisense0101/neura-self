@@ -409,7 +409,92 @@
                         </div>
                     </div>
                 </div>
-                <!-- Telegram Notification Section -->
+
+                <!-- Security Module Filter Pills -->
+                <div class="sec-filter-tabs">
+                    <button type="button" class="sec-tab-pill active" onclick="switchSecCardFilter('all', this)">All Controls</button>
+                    <button type="button" class="sec-tab-pill" onclick="switchSecCardFilter('captcha', this)"><span class="icon-svg" style="--icon: url('/static/assets/neura_icons/shield-halved.svg'); width:13px; height:13px;"></span> Captcha Solvers</button>
+                    <button type="button" class="sec-tab-pill" onclick="switchSecCardFilter('telegram', this)"><span class="icon-svg" style="--icon: url('/static/assets/neura_icons/bell.svg'); width:13px; height:13px;"></span> Telegram Alerts</button>
+                    <button type="button" class="sec-tab-pill" onclick="switchSecCardFilter('webhook', this)"><span class="icon-svg" style="--icon: url('/static/assets/neura_icons/comments.svg'); width:13px; height:13px;"></span> Discord Webhook</button>
+                    <button type="button" class="sec-tab-pill" onclick="switchSecCardFilter('alerts', this)"><span class="icon-svg" style="--icon: url('/static/assets/neura_icons/volume-high.svg'); width:13px; height:13px;"></span> Audio & OS</button>
+                </div>
+
+                <!-- 1. Captcha Auto-Solver & AI Model Card -->
+                <div id="sec-card-captcha" class="telegram-security-card sec-card-captcha">
+                    <div class="telegram-card-header">
+                        <div class="telegram-header-left">
+                            <div class="telegram-badge-icon badge-amber">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/shield-halved.svg'); width:20px; height:20px; background-color:#f59e0b;"></span>
+                            </div>
+                            <div class="telegram-header-titles">
+                                <h3>Captcha Auto-Solver & AI</h3>
+                                <p>Automated OCR solving via Cloud APIs (YesCaptcha, NopeCHA, etc.) and Local ONNX Model</p>
+                            </div>
+                        </div>
+                        <div class="telegram-header-toggle">
+                            <span class="telegram-status-label" id="sec-solver-status-label">Disabled</span>
+                            <div id="sec-solver-toggle" class="neura-toggle" role="switch" aria-checked="false" onclick="toggleSecSolver(this, event)">
+                                <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="telegram-card-body" id="sec-solver-card-body">
+                        <div class="telegram-fields-grid">
+                            <div class="telegram-field-item">
+                                <label class="telegram-field-label" for="sec-solver-service-select">
+                                    <span>Cloud Solver Service</span>
+                                    <span class="telegram-tooltip-trigger" title="Select which commercial solving provider to use">ⓘ</span>
+                                </label>
+                                <div class="telegram-input-wrapper">
+                                    <select id="sec-solver-service-select" class="telegram-field-input" onchange="onSecSolverServiceChange(this.value)" style="background:rgba(20,20,25,0.95); cursor:pointer;">
+                                        <option value="yescaptcha">YesCaptcha (Cost-effective, Fast)</option>
+                                        <option value="nopecha">NopeCHA (Token-based)</option>
+                                        <option value="anticaptcha">Anti-Captcha (Standard API)</option>
+                                        <option value="captchaly">Captchaly (Automated)</option>
+                                    </select>
+                                </div>
+                                <span class="telegram-field-hint" id="sec-solver-hint">Active provider for hCaptcha challenges</span>
+                            </div>
+                            <div class="telegram-field-item">
+                                <label class="telegram-field-label" for="sec-solver-api-key">
+                                    <span id="sec-solver-key-label">YesCaptcha API Key</span>
+                                    <span class="telegram-tooltip-trigger" title="Your private API key from the selected service">ⓘ</span>
+                                </label>
+                                <div class="telegram-input-wrapper">
+                                    <input type="password" id="sec-solver-api-key" class="telegram-field-input" placeholder="Paste your API key here..." autocomplete="off" oninput="onSecSolverKeyChange(this.value)">
+                                    <button type="button" class="telegram-toggle-visibility-btn" onclick="toggleTokenVisibility('sec-solver-api-key', this)" title="Show/Hide Key">
+                                        <svg class="eye-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        <svg class="eye-icon-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                                    </button>
+                                </div>
+                                <span class="telegram-field-hint">Used to authenticate requests with the solver</span>
+                            </div>
+                        </div>
+                        <div class="sec-ai-status-bar" style="margin-top:15px; padding:12px 16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; box-shadow:0 0 8px #10b981;"></span>
+                                <span style="font-size:0.85rem; color:#ddd; font-family:var(--font-mono);">Local AI Model: <b>best.onnx</b> (Letterword Inference Active)</span>
+                            </div>
+                            <div class="csw-balance-wrap" style="display:flex; align-items:center; gap:8px;">
+                                <span id="sec-csw-balance-badge" class="csw-balance-badge" onclick="fetchCaptchaBalanceSec()" style="cursor:pointer;">
+                                    <span class="csw-balance-dot"></span>
+                                    <span id="sec-csw-balance-text">Check API Balance</span>
+                                </span>
+                                <button type="button" class="cfg-stepper-btn csw-refresh-btn" onclick="fetchCaptchaBalanceSec()" title="Refresh balance">
+                                    <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg');"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="telegram-buttons-row" style="margin-top:18px;">
+                            <button type="button" class="btn-control green" onclick="saveCaptchaSecuritySettings(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/floppy-disk.svg');"></span>
+                                <span class="btn-text">Save Captcha Settings</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Telegram Notification Section -->
                 <div id="telegram-security-card" class="telegram-security-card">
                     <div class="telegram-card-header">
                         <div class="telegram-header-left">
@@ -502,6 +587,116 @@
                             <button type="button" class="btn-control green" id="tg-save-btn" onclick="saveTelegramSettings(this)">
                                 <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/floppy-disk.svg');"></span>
                                 <span class="btn-text">Save Telegram Settings</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Discord Webhook Section -->
+                <div id="sec-card-webhook" class="telegram-security-card sec-card-webhook">
+                    <div class="telegram-card-header">
+                        <div class="telegram-header-left">
+                            <div class="telegram-badge-icon badge-discord">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="#5865f2">
+                                    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.893.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                                </svg>
+                            </div>
+                            <div class="telegram-header-titles">
+                                <h3>Discord Webhook Alerts</h3>
+                                <p>Real-time notifications dispatched to a private Discord channel for security incidents</p>
+                            </div>
+                        </div>
+                        <div class="telegram-header-toggle">
+                            <span class="telegram-status-label" id="sec-webhook-status-label">Disabled</span>
+                            <div id="sec-webhook-toggle" class="neura-toggle" role="switch" aria-checked="false" onclick="toggleSecWebhook(this, event)">
+                                <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="telegram-card-body" id="sec-webhook-card-body">
+                        <div class="telegram-field-item">
+                            <label class="telegram-field-label" for="sec-webhook-url">
+                                <span>Discord Webhook URL</span>
+                                <span class="telegram-tooltip-trigger" title="Create a webhook in your Discord server under Channel Settings -> Integrations -> Webhooks">ⓘ</span>
+                            </label>
+                            <div class="telegram-input-wrapper">
+                                <input type="password" id="sec-webhook-url" class="telegram-field-input" placeholder="https://discord.com/api/webhooks/..." autocomplete="off" oninput="onSecWebhookUrlChange(this.value)">
+                                <button type="button" class="telegram-toggle-visibility-btn" onclick="toggleTokenVisibility('sec-webhook-url', this)" title="Show/Hide Webhook URL">
+                                    <svg class="eye-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <svg class="eye-icon-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                                </button>
+                            </div>
+                            <span class="telegram-field-hint">Paste your Discord channel webhook URL</span>
+                        </div>
+                        <div class="telegram-buttons-row" style="margin-top:18px;">
+                            <button type="button" class="btn-control input-dark" onclick="testWebhookNotification(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/sync.svg');"></span>
+                                <span class="btn-text">Test Discord Webhook</span>
+                            </button>
+                            <button type="button" class="btn-control green" onclick="saveWebhookSecuritySettings(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/floppy-disk.svg');"></span>
+                                <span class="btn-text">Save Webhook Settings</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. System & Sound Alarms Section -->
+                <div id="sec-card-alerts" class="telegram-security-card sec-card-alerts">
+                    <div class="telegram-card-header">
+                        <div class="telegram-header-left">
+                            <div class="telegram-badge-icon badge-emerald">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/volume-high.svg'); width:20px; height:20px; background-color:#10b981;"></span>
+                            </div>
+                            <div class="telegram-header-titles">
+                                <h3>Sound & System Alarms</h3>
+                                <p>Desktop push notifications, local audio siren, and mobile Termux vibration</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="telegram-card-body">
+                        <div class="telegram-fields-grid">
+                            <div class="sec-toggle-grid-box" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
+                                <div>
+                                    <div style="font-weight:600; color:#fff; font-size:0.95rem;">Desktop Push Notifications</div>
+                                    <div style="font-size:0.75rem; color:#888;">System popup banner when captcha is found</div>
+                                </div>
+                                <div id="sec-desktop-notif-toggle" class="neura-toggle" role="switch" onclick="toggleSecSimple('notifications.desktop.enabled', this)">
+                                    <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                                </div>
+                            </div>
+                            <div class="sec-toggle-grid-box" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
+                                <div>
+                                    <div style="font-weight:600; color:#fff; font-size:0.95rem;">Alert Sound (Siren Beep)</div>
+                                    <div style="font-size:0.75rem; color:#888;">Plays security_beep.mp3 on alert</div>
+                                </div>
+                                <div id="sec-desktop-sound-toggle" class="neura-toggle" role="switch" onclick="toggleSecSimple('notifications.desktop.sound', this)">
+                                    <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                                </div>
+                            </div>
+                            <div class="sec-toggle-grid-box" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
+                                <div>
+                                    <div style="font-weight:600; color:#fff; font-size:0.95rem;">Termux Vibration (Android)</div>
+                                    <div style="font-size:0.75rem; color:#888;">Vibrates phone on captcha/ban</div>
+                                </div>
+                                <div id="sec-termux-vibrate-toggle" class="neura-toggle" role="switch" onclick="toggleSecSimple('notifications.mobile.vibrate.enabled', this)">
+                                    <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                                </div>
+                            </div>
+                            <div class="sec-toggle-grid-box" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
+                                <div>
+                                    <div style="font-weight:600; color:#fff; font-size:0.95rem;">Open Captcha on PC Browser</div>
+                                    <div style="font-size:0.75rem; color:#888;">Automatically launches browser URL</div>
+                                </div>
+                                <div id="sec-open-pc-toggle" class="neura-toggle" role="switch" onclick="toggleSecSimple('open_captcha_url_on_pc', this)">
+                                    <div class="neura-toggle-track"><span class="neura-toggle-thumb"></span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="telegram-buttons-row" style="margin-top:18px;">
+                            <button type="button" class="btn-control green" onclick="saveAlertsSecuritySettings(this)">
+                                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/floppy-disk.svg');"></span>
+                                <span class="btn-text">Save System Alarm Settings</span>
                             </button>
                         </div>
                     </div>
