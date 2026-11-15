@@ -561,6 +561,15 @@ window.testTelegramNotification = async function(btn) {
 };
 
 window.saveTelegramSettings = async function(btn) {
+    if (!currentConfig || Object.keys(currentConfig).length <= 1) {
+        try {
+            const q = currentAccountId ? `?id=${encodeURIComponent(currentAccountId)}` : '';
+            const cfgRes = await fetch(`/api/settings${q}`);
+            if (cfgRes.ok) {
+                currentConfig = await cfgRes.json();
+            }
+        } catch (e) {}
+    }
     currentConfig = currentConfig || {};
     currentConfig.security = currentConfig.security || {};
     currentConfig.security.telegram = currentConfig.security.telegram || {};

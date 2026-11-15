@@ -326,6 +326,15 @@ def get_analytics():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+def deep_merge(target, source):
+    """Recursively merge source dict into target dict in-place."""
+    for k, v in source.items():
+        if isinstance(v, dict) and k in target and isinstance(target[k], dict):
+            deep_merge(target[k], v)
+        else:
+            target[k] = v
+    return target
+
 @app.route('/api/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
@@ -340,52 +349,51 @@ def settings():
         new_config = request.json or {}
         try:
             save_to_all = request.args.get('all_accounts') == 'true' or request.args.get('all') == 'true'
+            global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
             
-            # Ensure security.telegram is preserved or populated
-            if isinstance(new_config, dict):
-                sec = new_config.setdefault('security', {})
-                if isinstance(sec, dict):
-                    if 'telegram' not in sec or not isinstance(sec['telegram'], dict):
-                        target_file = config_path if os.path.exists(config_path) else os.path.join(state.CONFIG_DIR, 'settings.json')
-                        existing_tg = None
-                        if os.path.exists(target_file):
-                            try:
-                                with open(target_file, 'r', encoding='utf-8') as ef:
-                                    existing_tg = json.load(ef).get('security', {}).get('telegram')
-                            except Exception:
-                                pass
-                        sec['telegram'] = existing_tg or {
-                            "enabled": False,
-                            "bot_token": "",
-                            "chat_id": ""
-                        }
-                    else:
-                        sec['telegram'].setdefault('enabled', False)
-                        sec['telegram'].setdefault('bot_token', '')
-                        sec['telegram'].setdefault('chat_id', '')
+            # Helper to load existing config
+            def load_existing(path):
+                if os.path.exists(path):
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            return json.load(f)
+                    except Exception:
+                        pass
+                if os.path.exists(global_path):
+                    try:
+                        with open(global_path, 'r', encoding='utf-8') as f:
+                            return json.load(f)
+                    except Exception:
+                        pass
+                return {}
 
             if save_to_all:
-                global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
-                with open(global_path, 'w') as f:
-                    json.dump(new_config, f, indent=4)
+                target_base = load_existing(global_path)
+                merged_global = deep_merge(target_base, new_config) if target_base else new_config
+                with open(global_path, 'w', encoding='utf-8') as f:
+                    json.dump(merged_global, f, indent=4)
                 
                 for filename in os.listdir(state.CONFIG_DIR):
                     if filename.startswith("settings_") and filename.endswith(".json"):
                         file_path = os.path.join(state.CONFIG_DIR, filename)
-                        with open(file_path, 'w') as f:
-                            json.dump(new_config, f, indent=4)
+                        acc_base = load_existing(file_path)
+                        merged_acc = deep_merge(acc_base, new_config) if acc_base else new_config
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            json.dump(merged_acc, f, indent=4)
                 
                 for bot in state.bot_instances:
-                    asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop)
+                    asyncio.run_coroutine_threadsafe(bot.sync_settings(merged_global), bot.loop)
                 
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
             else:
-                with open(config_path, 'w') as f:
-                    json.dump(new_config, f, indent=4)
+                existing_base = load_existing(config_path)
+                merged_config = deep_merge(existing_base, new_config) if existing_base else new_config
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(merged_config, f, indent=4)
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
-                        asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop)
+                        asyncio.run_coroutine_threadsafe(bot.sync_settings(merged_config), bot.loop)
                 
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
             
