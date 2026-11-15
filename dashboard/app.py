@@ -715,6 +715,8 @@ def control():
     elif action == 'start':
         bot.paused = False
         bot.throttle_until = 0
+        for cmd_info in bot.cmd_states.values():
+            cmd_info['in_queue'] = False
         bot.log("SYS", "Bot RESUMED via Dashboard")
             
     elif action == 'cash':
@@ -739,6 +741,8 @@ def security():
     if action == 'resume':
         bot.paused = False
         bot.throttle_until = 0
+        for cmd_info in bot.cmd_states.values():
+            cmd_info['in_queue'] = False
         state.log_command("SEC", f"User Resumed {bot.username} from Security Alert", "success")
             
     return jsonify({'success': True})

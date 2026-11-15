@@ -300,11 +300,11 @@ class NeuraBot(commands.Bot):
             
             try:
                 if typing_enabled and not skip_typing:
-                    sent_ok = await NeuraHuman.neura_send(self, channel, content)
+                    sent_ok = await asyncio.wait_for(NeuraHuman.neura_send(self, channel, content), timeout=30.0)
                     if not sent_ok:
                         return False
                 else:
-                    await channel.send(content)
+                    await asyncio.wait_for(channel.send(content), timeout=15.0)
                     
                 self.last_sent_time = time.time()
                 short_cmd = content[:30] + "..." if len(content) > 30 else content
@@ -314,6 +314,9 @@ class NeuraBot(commands.Bot):
                     self.last_typing_time = None
                 self.log("CMD", f"Sent: {short_cmd}{typing_str}")
                 return True
+            except asyncio.TimeoutError:
+                self.log("WARN", f"Send timed out after 30s (proxy/network stall) for: {content[:20]}")
+                return False
             except Exception as e:
                 self.log("ERROR", f"Send failed: {str(e)}")
                 return False
