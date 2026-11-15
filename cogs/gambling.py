@@ -33,6 +33,14 @@ class Gambling(commands.Cog):
         self.martingale_states = {}
         self.last_outcomes = {}
         self.gambling_stats = {}
+        self._processed_gamble_ids = set()
+
+    def _mark_processed(self, msg_id):
+        if not hasattr(self, '_processed_gamble_ids'):
+            self._processed_gamble_ids = set()
+        self._processed_gamble_ids.add(msg_id)
+        if len(self._processed_gamble_ids) > 500:
+            self._processed_gamble_ids = set(list(self._processed_gamble_ids)[-250:])
 
     def _get_gambling_cfg(self):
         return self.bot.config.get('gambling', {})
@@ -89,45 +97,56 @@ class Gambling(commands.Cog):
         else:
             return min(base_amount, max_bet)
 
-    def _update_martingale(self, cmd, won):
+    def _update_martingale(self, cmd, outcome):
+        cmd_cfg = self._get_cmd_cfg(cmd)
+        base = cmd_cfg.get('amount', 1)
         if cmd not in self.martingale_states:
-            return
+            self.martingale_states[cmd] = {
+                'current_bet': base,
+                'base_bet': base,
+                'consecutive_losses': 0,
+                'consecutive_wins': 0
+            }
         m_state = self.martingale_states[cmd]
-        base = m_state['base_bet']
         max_bet = self._get_gambling_cfg().get('max_bet', 100000)
-        if won:
+        if outcome == 'win':
             m_state['current_bet'] = base
             m_state['consecutive_losses'] = 0
             m_state['consecutive_wins'] += 1
             self.bot.log("GAMBLING", f"Martingale: Won! Reset to {base}")
-        else:
+        elif outcome == 'loss':
             m_state['consecutive_losses'] += 1
             m_state['consecutive_wins'] = 0
             m_state['current_bet'] = min(m_state['current_bet'] * 2, max_bet)
             self.bot.log("GAMBLING", f"Martingale: Lost! Next: {m_state['current_bet']}")
+        elif outcome == 'tie':
+            self.bot.log("GAMBLING", f"Martingale: Push/Break-even! Holding bet at {m_state['current_bet']}")
 
-    def _record_outcome(self, cmd, won, amount):
+    def _record_outcome(self, cmd, outcome, bet_amount, net_profit):
         uid = str(self.bot.user.id) if (hasattr(self.bot, '_connection') and self.bot.user) else str(getattr(self.bot, 'user_id', ''))
         if uid not in self.gambling_stats:
             self.gambling_stats[uid] = {
-                'total_wins': 0, 'total_losses': 0, 'total_wagered': 0,
+                'total_wins': 0, 'total_losses': 0, 'total_ties': 0, 'total_wagered': 0,
                 'net_profit': 0, 'current_streak': 0, 'best_streak': 0,
                 'worst_streak': 0, 'biggest_win': 0, 'last_outcome': None
             }
         gs = self.gambling_stats[uid]
-        gs['total_wagered'] += amount
-        gs['last_outcome'] = 'win' if won else 'loss'
-        if won:
+        gs['total_wagered'] += bet_amount
+        gs['last_outcome'] = outcome
+        gs['net_profit'] += net_profit
+
+        if outcome == 'win':
             gs['total_wins'] += 1
-            gs['net_profit'] += amount
             gs['current_streak'] = max(1, gs['current_streak'] + 1) if gs['current_streak'] >= 0 else 1
             gs['best_streak'] = max(gs['best_streak'], gs['current_streak'])
-            gs['biggest_win'] = max(gs['biggest_win'], amount)
-        else:
+            gs['biggest_win'] = max(gs.get('biggest_win', 0), net_profit)
+        elif outcome == 'loss':
             gs['total_losses'] += 1
-            gs['net_profit'] -= amount
             gs['current_streak'] = min(-1, gs['current_streak'] - 1) if gs['current_streak'] <= 0 else -1
-            gs['worst_streak'] = min(gs['worst_streak'], gs['current_streak'])
+            gs['worst_streak'] = min(gs.get('worst_streak', 0), gs['current_streak'])
+        elif outcome == 'tie':
+            gs['total_ties'] = gs.get('total_ties', 0) + 1
+
         st = state.account_stats.get(uid, {})
         if st:
             st['gambling_stats'] = gs
@@ -207,33 +226,77 @@ class Gambling(commands.Cog):
             return
         content_lower = full_content.lower()
 
-        if "chose heads" in content_lower or "chose tails" in content_lower:
-            won = "won" in content_lower or "win" in content_lower
-            self._handle_gamble_outcome('coinflip', won, content_lower)
-        elif "___slots___" in content_lower or "slot" in content_lower:
-            won = "won" in content_lower or "win" in content_lower
-            self._handle_gamble_outcome('slots', won, content_lower)
+        # Deduplicate message events
+        if message.id in self._processed_gamble_ids:
+            return
+
+        if "___slots___" in content_lower or "slot" in content_lower:
+            # Check if animation is finished (final result line present)
+            if "and won" not in content_lower:
+                return  # Still spinning animation, wait for edit!
+
+            self._mark_processed(message.id)
+
+            # Extract bet amount from message, e.g. "bet <:cowoncy:416043450337853441> 1"
+            bet_match = re.search(r'bet\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower)
+            bet_amount = int(bet_match.group(1).replace(',', '')) if bet_match else self._get_current_bet_for_cmd('slots')
+
+            if "nothing" in content_lower:
+                # Total loss (0x payout)
+                outcome = 'loss'
+                net = -bet_amount
+            else:
+                won_match = re.search(r'and won\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower)
+                payout = int(won_match.group(1).replace(',', '')) if won_match else 0
+                net = payout - bet_amount
+                if net > 0:
+                    outcome = 'win'
+                elif net == 0:
+                    outcome = 'tie'
+                else:
+                    outcome = 'loss'
+
+            self._handle_gamble_outcome('slots', outcome, bet_amount, net, content_lower)
+
+        elif ("chose" in content_lower and ("heads" in content_lower or "tails" in content_lower)) or "coin spins" in content_lower:
+            # Check if coinflip animation is finished
+            if "and you won" not in content_lower and "and you lost" not in content_lower and "lands on" not in content_lower and "you lost" not in content_lower and "you won" not in content_lower:
+                return  # Still spinning!
+
+            self._mark_processed(message.id)
+
+            bet_match = re.search(r'spent\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower)
+            bet_amount = int(bet_match.group(1).replace(',', '')) if bet_match else self._get_current_bet_for_cmd('coinflip')
+
+            if "and you won" in content_lower or "you won" in content_lower:
+                won_match = re.search(r'(?:and you won|you won)\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower)
+                payout = int(won_match.group(1).replace(',', '')) if won_match else (bet_amount * 2)
+                net = payout - bet_amount
+                outcome = 'win'
+            else:
+                outcome = 'loss'
+                net = -bet_amount
+
+            self._handle_gamble_outcome('coinflip', outcome, bet_amount, net, content_lower)
+
         elif "blackjack" in content_lower or "bj" in content_lower:
             outcome = None
             if message.embeds:
                 outcome = self._parse_blackjack_outcome(message.embeds[0])
-            if outcome == "win":
-                self._handle_gamble_outcome('blackjack', True, content_lower)
-            elif outcome == "loss":
-                self._handle_gamble_outcome('blackjack', False, content_lower)
-            elif outcome == "tie":
-                self._sync_cash_from_response(content_lower)
-                self.bot.log("GAMBLING", "Blackjack: Tie/Bust - no win/loss recorded.")
-            else:
-                won = "won" in content_lower and "lost" not in content_lower
-                if "won" in content_lower or "lost" in content_lower:
-                    self._handle_gamble_outcome('blackjack', won, content_lower)
-        elif any(phrase in content_lower for phrase in ["you won", "you lost", "bet"]):
-            won = "won" in content_lower and "lost" not in content_lower
-            for game_cmd in ['coinflip', 'slots', 'blackjack']:
-                if self._is_recent_gamble(game_cmd):
-                    self._handle_gamble_outcome(game_cmd, won, content_lower)
-                    break
+
+            if outcome in ("win", "loss", "tie"):
+                self._mark_processed(message.id)
+                bet_amount = self._get_current_bet_for_cmd('blackjack')
+                if outcome == "win":
+                    net = bet_amount
+                elif outcome == "loss":
+                    net = -bet_amount
+                else:
+                    net = 0
+                self._handle_gamble_outcome('blackjack', outcome, bet_amount, net, content_lower)
+            elif outcome is None:
+                # In-progress Blackjack game, wait for final embed
+                pass
 
     def _is_recent_gamble(self, cmd):
         if cmd not in self.bot.cmd_states:
@@ -241,15 +304,11 @@ class Gambling(commands.Cog):
         elapsed = time.time() - self.bot.cmd_states[cmd].get('last_ran', 0)
         return elapsed < 30
 
-    def _handle_gamble_outcome(self, cmd, won, content):
+    def _handle_gamble_outcome(self, cmd, outcome, bet_amount, net_profit, content):
+        self._update_martingale(cmd, outcome)
+        self._record_outcome(cmd, outcome, bet_amount, net_profit)
+
         cmd_cfg = self._get_cmd_cfg(cmd)
-        base_amount = cmd_cfg.get('amount', 1)
-        bet_amount = self._get_current_bet_for_cmd(cmd)
-
-        self._update_martingale(cmd, won)
-
-        self._record_outcome(cmd, won, bet_amount)
-
         if cmd == 'coinflip':
             side = cmd_cfg.get('side', 'h')
             next_bet = self._get_current_bet_for_cmd('coinflip')
@@ -259,15 +318,13 @@ class Gambling(commands.Cog):
             self.bot.cmd_states['slots']['content'] = f"slots {next_bet}"
 
         self._sync_cash_from_response(content)
-        outcome_str = "WON" if won else "LOST"
+        outcome_str = outcome.upper()
         uid = str(self.bot.user.id) if (hasattr(self.bot, '_connection') and self.bot.user) else str(getattr(self.bot, 'user_id', ''))
         gs = self.gambling_stats.get(uid, {})
-        self.bot.log("GAMBLING", f"{cmd.upper()}: {outcome_str} (Bet: {bet_amount}, Net: {gs.get('net_profit', 0):,})")
+        self.bot.log("GAMBLING", f"{cmd.upper()}: {outcome_str} (Bet: {bet_amount}, Net: {net_profit:+}, Overall Net: {gs.get('net_profit', 0):,})")
 
     def _sync_cash_from_response(self, content):
         cash_match = re.search(r'(?:now have|balance[^\d]*)([,\d]+)', content, re.IGNORECASE)
-        if not cash_match:
-            cash_match = re.search(r'(?:won|lost)\s+([,\d]+)\s+cowoncy', content, re.IGNORECASE)
         if cash_match:
             try:
                 cash_str = cash_match.group(1).replace(',', '')
