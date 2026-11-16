@@ -192,6 +192,23 @@
     background: rgba(239, 68, 68, 0.2);
     color: #ef4444;
 }
+.tag-strategy,
+.tag-strat {
+    background: rgba(168, 85, 247, 0.2);
+    color: #a855f7;
+}
+.tag-strategy_verified {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+.tag-strategy_warn {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+.tag-boss {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
 
 .history-msg {
     color: #ddd;

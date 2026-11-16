@@ -343,7 +343,7 @@ class NeuraBot(commands.Bot):
         known = ['hunt', 'battle', 'curse', 'huntbot', 'daily', 'cookie',
                 'quest', 'checklist', 'cf', 'slots', 'bj', 'blackjack', 'autohunt', 'upgrade',
                 'sacrifice', 'team', 'zoo', 'use', 'inv', 'sell', 'crate',
-                'lootbox', 'run', 'pup', 'piku','pray']
+                'lootbox', 'run', 'pup', 'piku', 'pray', 'weapon', 'equip', 'dismantle', 'dis', 'setteam']
         
         if self.shortforms:
             for sf in self.shortforms.values():
@@ -420,7 +420,7 @@ class NeuraBot(commands.Bot):
         cog_names = set()
         cmd_to_cog = {
             "owo": "Grinding", "hunt": "Grinding", "battle": "Grinding",
-            "coinflip": "Gambling", "slots": "Gambling",
+            "coinflip": "Gambling", "slots": "Gambling", "blackjack": "Gambling",
             "curse": "NeuraCursePray", "pray": "NeuraCursePray",
             "shop": "Shop", "huntbot": "HuntBot", "daily": "Daily",
             "quest": "Quest", "rpp": "RPP", "cookie": "Cookie",
@@ -432,6 +432,7 @@ class NeuraBot(commands.Bot):
             "boss": "Boss",
             "utilities": "ChannelSwitch",
             "level_grind": "LevelQuotes",
+            "gambling": "Gambling",
         }
         for path in changed_paths:
             if path == "commands" or path.startswith("commands."):
@@ -468,6 +469,7 @@ class NeuraBot(commands.Bot):
             ("shop_cash_sync", enabled("shop")),
             ("level_quotes", self.config.get("level_grind", {}).get("enabled", False)),
             ("channelswitch", self.config.get("utilities", {}).get("autochannel", {}).get("enabled", False)),
+            ("strategy", False),
         ]
         for cmd_id, is_on in rules:
             if not is_on and cmd_id in self.cmd_states:
@@ -716,6 +718,7 @@ class NeuraBot(commands.Bot):
                     em.title or "",
                     em.author.name if em.author else "",
                     em.description or "",
+                    em.footer.text if em.footer and em.footer.text else "",
                     "\n".join([f"{f.name}: {f.value}" for f in em.fields])
                 ]
                 embed_texts.append("\n".join([p for p in parts if p]))
@@ -740,6 +743,8 @@ class NeuraBot(commands.Bot):
                 target_channel_id = options.get("target_channel_id")
 
                 ran_successfully = False
+                if not isinstance(content, str):
+                    content = str(content)
                 
                 try:
                     if content == "":
@@ -807,10 +812,16 @@ class NeuraBot(commands.Bot):
                             
                             cog = self.get_cog(class_map[cmd_id])
                             if cog:
-                                if cmd_id == "coinflip": getattr(cog, "trigger_coinflip")()
-                                elif cmd_id == "slots": getattr(cog, "trigger_slots")()
-                                elif cmd_id == "blackjack": getattr(cog, "trigger_blackjack")()
-                                else: getattr(cog, "trigger_action")()
+                                if cmd_id in ["coinflip", "slots", "blackjack"]:
+                                    prev_content = self.cmd_states[cmd_id].get('content')
+                                    if cmd_id == "coinflip": getattr(cog, "trigger_coinflip")()
+                                    elif cmd_id == "slots": getattr(cog, "trigger_slots")()
+                                    elif cmd_id == "blackjack": getattr(cog, "trigger_blackjack")()
+                                    # Ensure calling trigger_* doesn't overwrite a newly updated bet with stale data
+                                    if prev_content and prev_content != content:
+                                        self.cmd_states[cmd_id]['content'] = prev_content
+                                else:
+                                    getattr(cog, "trigger_action")()
                 
                 finally:
                     if cmd_id and cmd_id in self.cmd_states:
@@ -868,7 +879,14 @@ class NeuraBot(commands.Bot):
                                 actual_content = actual_content()
                         
                         if actual_content is not None:
-                            asyncio.create_task(self.neura_enqueue(actual_content, priority=state["priority"], _cmd_id=cmd_id))
+                            if isinstance(actual_content, (list, tuple)):
+                                for sub_cmd in actual_content:
+                                    if sub_cmd:
+                                        asyncio.create_task(self.neura_enqueue(sub_cmd, priority=state["priority"], _cmd_id=cmd_id))
+                                state["in_queue"] = False
+                                state["last_ran"] = time.time()
+                            else:
+                                asyncio.create_task(self.neura_enqueue(actual_content, priority=state["priority"], _cmd_id=cmd_id))
                         else:
                             state["in_queue"] = False
                             state["last_ran"] = time.time()

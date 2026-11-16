@@ -1,0 +1,103 @@
+name: Deploy NeuraSelf to Oracle VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H -t ed25519,rsa "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to Oracle VPS
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" 'bash -se' << 'EOF'
+            set -euo pipefail
+
+            APP_DIR="/home/ubuntu/neura-self"
+            STORAGE_DIR="/home/ubuntu/neura-storage"
+
+            echo "=== 1. Syncing Repository ==="
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Cloning fresh repository..."
+              git clone https://github.com/xisense0101/neura-self.git "$APP_DIR"
+            else
+              echo "Pulling latest changes..."
+              cd "$APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
+            cd "$APP_DIR"
+
+            echo "=== 2. Applying Persistent Storage & Secrets ==="
+            if [ -d "$STORAGE_DIR/config" ]; then
+              cp -r "$STORAGE_DIR/config/"* "$APP_DIR/config/"
+            fi
+            if [ -d "$STORAGE_DIR/data" ]; then
+              cp -r "$STORAGE_DIR/data/"* "$APP_DIR/data/"
+            fi
+
+            echo "=== 3. Setting Up Python Environment ==="
+            if [ ! -d ".venv" ]; then
+              python3 -m venv .venv
+            fi
+            .venv/bin/pip install --upgrade pip
+            .venv/bin/pip install -r requirements.txt
+
+            echo "=== 4. Setting Up Systemd Service ==="
+            sudo tee /etc/systemd/system/neuraself.service > /dev/null << 'SERVICE'
+          [Unit]
+          Description=NeuraSelf Discord Bot & Web Dashboard
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=ubuntu
+          WorkingDirectory=/home/ubuntu/neura-self
+          ExecStart=/home/ubuntu/neura-self/.venv/bin/python3 neura.py --autostart
+          Restart=always
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          LimitNOFILE=65535
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+
+            sudo systemctl daemon-reload
+            sudo systemctl enable neuraself.service
+            sudo systemctl restart neuraself.service
+
+            echo "=== 5. Verifying Deployment ==="
+            sleep 5
+            if sudo systemctl is-active --quiet neuraself.service; then
+              echo "NeuraSelf service is running successfully!"
+            else
+              echo "Service failed to start! Checking logs:"
+              sudo journalctl -u neuraself.service -n 50 --no-pager
+              exit 1
+            fi
+          EOF

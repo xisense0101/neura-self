@@ -85,7 +85,8 @@ def get_empty_stats():
             'worst_streak': 0,
             'biggest_win': 0,
             'last_outcome': None
-        }
+        },
+        'martingale_states': {}
     }
 
 def save_account_stats():
@@ -111,7 +112,8 @@ def save_account_stats():
                     'total_wins': 0, 'total_losses': 0, 'total_wagered': 0,
                     'net_profit': 0, 'current_streak': 0, 'best_streak': 0,
                     'worst_streak': 0, 'biggest_win': 0, 'last_outcome': None
-                })
+                }),
+                'martingale_states': st.get('martingale_states', {})
             }
         
         os.makedirs('config', exist_ok=True)
@@ -152,7 +154,26 @@ command_logs = deque(maxlen=1000)
 full_session_history = []
 
 def log_command(type, message, status="info", bot_name=None, bot_id=None):
-    hex_color = log_config.get("colors", {}).get(type, "#ffffff")
+    hex_color = log_config.get("colors", {}).get(type, None)
+    if not hex_color:
+        default_colors = {
+            "SYS": "#00ffff",
+            "CMD": "#00ff00",
+            "INFO": "#0099ff",
+            "SUCCESS": "#00ff00",
+            "COOLDOWN": "#ffff00",
+            "ALARM": "#ff0000",
+            "ERROR": "#ff0000",
+            "SECURITY": "#ff0000",
+            "AutoHunt": "#00ffff",
+            "STRATEGY": "#c084fc",
+            "STRAT": "#c084fc",
+            "STRATEGY_VERIFIED": "#4ade80",
+            "STRATEGY_WARN": "#fbbf24",
+            "BOSS": "#f87171",
+            "GAMBLING": "#eab308"
+        }
+        hex_color = default_colors.get(type, "#ffffff")
     
     if "Sent: owo " in message:
         split_msg = message.split("Sent: owo ")

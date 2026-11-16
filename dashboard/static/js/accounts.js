@@ -28,7 +28,16 @@ window.fetchAccounts = async function() {
             }
         }
         renderAccountGrid();
-        updateGlobalAccountName(); 
+        updateGlobalAccountName();
+        if (typeof updateStrategyAccountBadge === 'function') {
+            try { updateStrategyAccountBadge(); } catch (err) {}
+        }
+        const stratView = document.getElementById('strategy');
+        if (stratView && stratView.classList.contains('active-view') && typeof loadStrategyView === 'function') {
+            if (typeof strategyState === 'undefined' || !strategyState) {
+                loadStrategyView(false);
+            }
+        } 
     } catch (e) {
         console.error("Failed to fetch accounts", e);
         const grid = document.getElementById('accounts-grid');
@@ -38,15 +47,21 @@ window.fetchAccounts = async function() {
 
 function updateGlobalAccountName() {
     const nameEl = document.getElementById('currentAccountName');
-    if (!nameEl) return;
-    if (currentAccountId) {
-        const acc = accountsList.find(a => a.id === currentAccountId);
-        if (acc) {
-            nameEl.innerText = `ACCOUNT: ${acc.username}`;
-            return;
+    if (nameEl) {
+        if (currentAccountId) {
+            const acc = accountsList.find(a => a.id === currentAccountId);
+            if (acc) {
+                nameEl.innerText = `ACCOUNT: ${acc.username}`;
+            } else {
+                nameEl.innerText = 'Loading account...';
+            }
+        } else {
+            nameEl.innerText = 'Loading account...';
         }
     }
-    nameEl.innerText = 'Loading account...';
+    if (typeof updateStrategyAccountBadge === 'function') {
+        try { updateStrategyAccountBadge(); } catch (err) {}
+    }
 }
 
 window.selectAccount = function(id) {
@@ -57,6 +72,9 @@ window.selectAccount = function(id) {
     if (acc) {
         showToast(`Switched to account: ${acc.username}`, 'success');
         updateGlobalAccountName(); 
+    }
+    if (typeof updateStrategyAccountBadge === 'function') {
+        try { updateStrategyAccountBadge(); } catch (err) {}
     }
     if (lineChart) lineChart.data.datasets[0].data = Array(30).fill(0);
     const configView = document.getElementById('config');

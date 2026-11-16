@@ -1,5 +1,6 @@
 {
     "owo": 1,
+    "strategy": 2,
     "hunt": 3,
     "battle": 3,
     "coinflip": 3,
@@ -14,6 +15,7 @@
     "channelswitch": 5,
     "shop_buy": 3,
     "shop_cash_sync": 3,
+    "strategy": 2,
     "sell": 4,
     "sacrifice": 4
 }

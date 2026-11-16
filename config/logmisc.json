@@ -8,7 +8,14 @@
     "ALARM": "#ff0000",
     "ERROR": "#ff0000",
     "SECURITY": "#ff0000",
-    "AutoHunt": "#00ffff"
+    "AutoHunt": "#00ffff",
+    "STRATEGY": "#a855f7",
+    "STRAT": "#a855f7",
+    "STRATEGY_VERIFIED": "#10b981",
+    "STRATEGY_WARN": "#f59e0b",
+    "BOSS": "#f87171",
+    "GAMBLING": "#eab308",
+    "WARN": "#f59e0b"
   },
   "commands": {
     "hunt": "#ff1f1f",
@@ -20,6 +27,12 @@
     "owo": "#ffffff",
     "cf": "#3498db",
     "slots": "#e74c3c",
-    "rpp": "#1abc9c"
+    "rpp": "#1abc9c",
+    "weapon": "#a855f7",
+    "team": "#ec4899",
+    "zoo": "#10b981",
+    "inv": "#06b6d4",
+    "equip": "#a855f7",
+    "dismantle": "#f59e0b"
   }
 }

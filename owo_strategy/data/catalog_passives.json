@@ -1,0 +1,533 @@
+[
+  {
+    "name": "Strength",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 20,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "Increases your :str: STR by [stat]",
+    "effect_type": "passive",
+    "slug": "str",
+    "aliases": [
+      "str",
+      "att"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Magic",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 20,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "Increases your :mag: MAG by [stat]",
+    "effect_type": "passive",
+    "slug": "mag",
+    "aliases": [
+      "mag"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Health Point",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 20,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "Increases your :hp: HP by [stat]",
+    "effect_type": "passive",
+    "slug": "hp",
+    "aliases": [
+      "hp"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Weapon Point",
+    "stat_boosts": [
+      {
+        "min": 10,
+        "max": 30,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Increases your :wp: WP by [stat]",
+    "effect_type": "passive",
+    "slug": "wp",
+    "aliases": [
+      "wp"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Physical Resistance",
+    "stat_boosts": [
+      {
+        "min": 15,
+        "max": 35,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Increases your :ipr: iPR by [stat]",
+    "effect_type": "passive",
+    "slug": "pr",
+    "aliases": [
+      "pr"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Magical Resistance",
+    "stat_boosts": [
+      {
+        "min": 15,
+        "max": 35,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Increases your :imr: iMR by [stat]",
+    "effect_type": "passive",
+    "slug": "mr",
+    "aliases": [
+      "mr"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Lifesteal",
+    "stat_boosts": [
+      {
+        "min": 15,
+        "max": 35,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "All damage you deal heals you for [stat] of the damage dealt!",
+    "effect_type": "passive",
+    "slug": "ls",
+    "aliases": [
+      "ls"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Thorns",
+    "stat_boosts": [
+      {
+        "min": 15,
+        "max": 35,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Reflect [stat] of the damage dealt to you as true damage",
+    "effect_type": "passive",
+    "slug": "th",
+    "aliases": [
+      "th"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Mana Tap",
+    "stat_boosts": [
+      {
+        "min": 15,
+        "max": 30,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "All damage you deal replenishes your :wp: WP for [stat] of the damage dealt!",
+    "effect_type": "passive",
+    "slug": "mtap",
+    "aliases": [
+      "mtap",
+      "manatap"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Absolve",
+    "stat_boosts": [
+      {
+        "min": 60,
+        "max": 80,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "When healed, deal [stat] of the healed amount to a random enemy as :mag: MAG damage",
+    "effect_type": "passive",
+    "slug": "absv",
+    "aliases": [
+      "absv"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Safeguard",
+    "stat_boosts": [
+      {
+        "min": 20,
+        "max": 40,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Negate [stat] of the damage dealt to you with :wp: WP",
+    "effect_type": "passive",
+    "slug": "sg",
+    "aliases": [
+      "sg"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Critical",
+    "stat_boosts": [
+      {
+        "min": 10,
+        "max": 30,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      },
+      {
+        "min": 25,
+        "max": 50,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "Every attack has a [stat] chance to deal [stat] more damage. This can apply to heals.",
+    "effect_type": "passive",
+    "slug": "crit",
+    "aliases": [
+      "crit"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Discharge",
+    "stat_boosts": [
+      {
+        "min": 110,
+        "max": 150,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "When :wp: WP is replenished, deal [stat] of the replenished amount to a random enemy as :mag: MAG damage",
+    "effect_type": "passive",
+    "slug": "dc",
+    "aliases": [
+      "dc"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Kamikaze",
+    "stat_boosts": [
+      {
+        "min": 50,
+        "max": 75,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "When the animal dies, deal [stat] of its max :hp: HP as :mag: MAG dmg to the attacker",
+    "effect_type": "passive",
+    "slug": "kkaze",
+    "aliases": [
+      "kkaze",
+      "kk"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Regeneration",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 10,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "Heal [stat] of your max :hp: HP after every turn",
+    "effect_type": "passive",
+    "slug": "hgen",
+    "aliases": [
+      "hgen",
+      "regen"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Energize",
+    "stat_boosts": [
+      {
+        "min": 20,
+        "max": 40,
+        "type": "",
+        "emoji": [],
+        "unit": "",
+        "digits": 4
+      }
+    ],
+    "description": "Replenish [stat] :wp: WP after every turn",
+    "effect_type": "passive",
+    "slug": "wgen",
+    "aliases": [
+      "wgen",
+      "energ"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Sprout",
+    "stat_boosts": [
+      {
+        "min": 20,
+        "max": 40,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Increase all incoming healing by [stat]",
+    "effect_type": "passive",
+    "slug": "sprout",
+    "aliases": [
+      "sprt"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Enrage",
+    "stat_boosts": [
+      {
+        "min": 1,
+        "max": 4,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Every 10% of missing health gives [stat] extra damage",
+    "effect_type": "passive",
+    "slug": "enrage",
+    "aliases": [
+      "enra"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Sacrifice",
+    "stat_boosts": [
+      {
+        "min": 25,
+        "max": 50,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 15,
+        "max": 35,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "description": "When this animal dies, heal your teammates for [stat] of its Max :hp: HP and replenish for [stat] of its Max :wp: WP",
+    "effect_type": "passive",
+    "slug": "sac",
+    "aliases": [
+      "sac"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Snail",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 15,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Your pet snail fights with you. Whenever you attack an animal, snail will slap a random enemy for [stat] of the damage dealt.",
+    "effect_type": "passive",
+    "slug": "snail",
+    "aliases": [],
+    "buff_slugs": []
+  },
+  {
+    "name": "Knowledge",
+    "stat_boosts": [
+      {
+        "min": 5,
+        "max": 15,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "This passive does not do anything in battle. However, it will give this animal [stat] extra xp after each battle.",
+    "effect_type": "passive",
+    "slug": "kno",
+    "aliases": [
+      "kno",
+      "n"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Giant Slayer",
+    "stat_boosts": [
+      {
+        "min": 10,
+        "max": 25,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "description": "Deal [stat] more damage to bosses.",
+    "effect_type": "passive",
+    "slug": "gslay",
+    "aliases": [
+      "gslay",
+      "slayer",
+      "slay",
+      "giant",
+      "gslayer"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Adaptation",
+    "stat_boosts": [],
+    "description": "Gains resistance against the last damage type received. Physical hits grant :stoneskin: **Stoneskin**, while Magical hits grant :spellskin: **Spellskin**.",
+    "effect_type": "passive",
+    "slug": "adapt",
+    "aliases": [
+      "adapt"
+    ],
+    "buff_slugs": [
+      "stoneskin",
+      "spellskin"
+    ]
+  },
+  {
+    "name": "Resonance",
+    "stat_boosts": [
+      {
+        "min": 2,
+        "max": 8,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4.5
+      },
+      {
+        "min": 4,
+        "max": 10,
+        "type": "",
+        "emoji": [],
+        "unit": "%",
+        "digits": 4.5
+      }
+    ],
+    "description": "For every buff you have, deal [stat] more damage. For every debuff you have, take [stat] less damage.",
+    "effect_type": "passive",
+    "slug": "resonance",
+    "aliases": [
+      "res",
+      "reso"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "name": "Living Hive",
+    "stat_boosts": [
+      {
+        "min": 8,
+        "max": 2,
+        "type": "",
+        "emoji": [],
+        "unit": "",
+        "digits": 4
+      }
+    ],
+    "description": "When dealing damage, spend [stat] :wp: WP to apply :pest: **Pest** to the target.",
+    "effect_type": "passive",
+    "slug": "swarm",
+    "aliases": [
+      "swarm",
+      "hive",
+      "lhive"
+    ],
+    "buff_slugs": [
+      "pest"
+    ]
+  }
+]

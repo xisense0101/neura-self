@@ -34,6 +34,10 @@ wheels/
 
 tokens.txt
 *.local
+.local_config_backup/
+config/settings_*.json
+data/*.json
+!data/neura_quotes.json
 
 # ===============================
 # Virtual environments

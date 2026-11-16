@@ -1,0 +1,73 @@
+name: Notify Upstream NeuraSelf Updates
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+  workflow_dispatch:
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Upstream Commits
+        id: check_upstream
+        env:
+          UPSTREAM_REPO: "routo-loop/neura-self"
+          FORK_REPO: "xisense0101/neura-self"
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -e
+
+          echo "Fetching latest upstream commit..."
+          UPSTREAM_JSON=$(curl -s "https://api.github.com/repos/${UPSTREAM_REPO}/commits/main")
+          UPSTREAM_SHA=$(echo "$UPSTREAM_JSON" | jq -r '.sha // empty')
+          UPSTREAM_MSG=$(echo "$UPSTREAM_JSON" | jq -r '.commit.message // empty' | head -n 1)
+          UPSTREAM_AUTHOR=$(echo "$UPSTREAM_JSON" | jq -r '.commit.author.name // empty')
+          UPSTREAM_DATE=$(echo "$UPSTREAM_JSON" | jq -r '.commit.author.date // empty')
+
+          echo "Fetching latest fork commit..."
+          FORK_JSON=$(curl -s "https://api.github.com/repos/${FORK_REPO}/commits/main")
+          FORK_SHA=$(echo "$FORK_JSON" | jq -r '.sha // empty')
+
+          if [ -z "$UPSTREAM_SHA" ] || [ -z "$FORK_SHA" ]; then
+            echo "Failed to retrieve commit information."
+            exit 1
+          fi
+
+          echo "Upstream SHA: $UPSTREAM_SHA"
+          echo "Fork SHA: $FORK_SHA"
+
+          # Check if upstream commit is in fork
+          COMPARE_JSON=$(curl -s "https://api.github.com/repos/${UPSTREAM_REPO}/compare/${FORK_SHA}...${UPSTREAM_SHA}")
+          AHEAD_BY=$(echo "$COMPARE_JSON" | jq -r '.ahead_by // 0')
+
+          echo "Upstream is ahead by $AHEAD_BY commit(s)."
+
+          if [ "$AHEAD_BY" -gt 0 ] && [ "$UPSTREAM_SHA" != "$FORK_SHA" ]; then
+            echo "New upstream update detected! Sending Telegram notification..."
+            TEXT=$(cat <<EOF
+🔔 <b>NeuraSelf Upstream Update Detected!</b>
+
+📦 <b>Repository:</b> <code>${UPSTREAM_REPO}</code>
+📝 <b>New Commit:</b> ${UPSTREAM_MSG}
+👤 <b>Author:</b> ${UPSTREAM_AUTHOR}
+📅 <b>Date:</b> ${UPSTREAM_DATE}
+🚀 <b>New Commits:</b> ${AHEAD_BY}
+
+🔗 <a href="https://github.com/${UPSTREAM_REPO}/commit/${UPSTREAM_SHA}">View Commit on GitHub</a>
+
+💡 <i>Your configuration on Oracle VPS remains safe and untouched. You can review and merge when ready.</i>
+EOF
+            )
+
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${CHAT_ID}" \
+              -d "text=${TEXT}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true"
+
+            echo "Notification sent."
+          else
+            echo "Fork is up to date with upstream."
+          fi

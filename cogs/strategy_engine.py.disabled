@@ -1,0 +1,1256 @@
+# This file is part of NeuraSelf-UwU.
+# Copyright (c) 2025-Present Routo
+#
+# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+"""
+Strategy Engine Discord Cog for NeuraSelf.
+
+Integrates the OwO Strategy Engine:
+- Ingests active team and weapon inventory snapshots from OwO and NeonUtil responses.
+- Implements !owo-eval / owo eval: evaluates active team EHP, DPS solvency, and win rate.
+- Implements !owo-opt / owo opt: 3-stage multi-fidelity tournament optimizer with equip commands.
+- Implements !owo-boss / owo boss: 24-turn Guild Boss raid simulation and composite score.
+- Implements !owo-shards / owo shards: safe shard dismantle planner with strict dry_run = True guardrails.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import random
+import re
+import time
+from typing import Any, Mapping, Optional
+
+import discord
+from discord.ext import commands
+
+from owo_strategy.ingestion.neon_parser import (
+    parse_neon_calculation_message,
+    parse_neon_inventory,
+    parse_team_message,
+    parse_weapon_inventory_message,
+)
+from owo_strategy.ingestion.owo_parser import (
+    ParsedTeam,
+    ParsedWeaponInspect,
+    ParsedWeaponInv,
+    ParsedZoo,
+    STANDARD_ANIMAL_NAMES,
+    normalize_animal_name,
+    parse_owo_message,
+)
+from owo_strategy.optimizer.boss_solver import (
+    STANDARD_BOSS_PRESETS,
+    BossPreset,
+    BossRaidSolver,
+)
+from owo_strategy.optimizer.evaluator import (
+    CandidateEvaluation,
+    KNOWN_ANIMAL_DEX,
+    evaluate_candidate,
+    get_weapon_spec,
+)
+from owo_strategy.optimizer.level_scaler import MultiLevelScaler, NeonUtilExporter
+from owo_strategy.optimizer.reporting import generate_full_report
+from owo_strategy.optimizer.shard_planner import DismantlePlan, ShardPlanner
+from owo_strategy.optimizer.team_optimizer import (
+    CandidateTeam,
+    OptimizationResult,
+    TeamOptimizer,
+)
+from owo_strategy.schemas.models import OwnedAnimal, OwnedWeapon
+
+logger = logging.getLogger(__name__)
+
+OWO_BOT_ID = 408785106942164992
+
+
+# False positive tier names misparsed from help or summary embeds
+TIER_FILTER_NAMES: set[str] = {
+    "common", "uncommon", "rare", "epic", "mythic", "mythical",
+    "legendary", "fabled", "special", "gem", "hidden", "patreon", "distorted",
+    "c", "u", "r", "e", "m", "l", "f", "g", "b", "s", "h", "d", "p",
+    "hp", "wp", "str", "mag", "pr", "mr", "health", "mana", "points",
+    "stat", "stats", "weapon", "weapons", "animal", "animals", "level",
+    "lvl", "xp", "exp", "total", "score", "rank", "tier"
+}
+
+# Discord commands or help keywords mistakenly parsed as weapon IDs
+DISCORD_HELP_KEYWORDS: set[str] = {
+    "cookie", "cuddle", "rada", "proxies", "settings", "profile", "marry", "emoji",
+    "wallpaper", "owoify", "avatar", "hug", "kiss", "lick", "nom", "pat", "poke",
+    "slap", "stare", "highfive", "bite", "greet", "punch", "handholding", "tickle",
+    "kill", "hold", "pats", "wave", "boop", "snuggle", "bully", "pray", "curse",
+    "ship", "level", "quest", "checklist", "use", "inv", "sell", "crate", "lootbox",
+    "battle", "hunt", "shop", "daily", "cf", "slots", "bj", "blackjack", "autohunt",
+    "upgrade", "sacrifice", "team", "zoo", "run", "pup", "piku"
+}
+
+# Default placeholder weapon IDs used for initialization before live telemetry
+FALLBACK_WEAPON_IDS: set[str] = {
+    "101", "102", "103", "104", "105", "106", "107", "108",
+    "201", "202", "203", "b204", "W1", "W2", "W3"
+}
+
+try:
+    from owo_strategy.ingestion.catalog_sync import load_catalog_animals
+    ANIMAL_CATALOG: set[str] = {a.name.lower() for a in load_catalog_animals()}
+except Exception:
+    ANIMAL_CATALOG: set[str] = set()
+
+try:
+    ANIMAL_CATALOG.update(STANDARD_ANIMAL_NAMES)
+except Exception:
+    pass
+
+try:
+    ANIMAL_CATALOG.update(KNOWN_ANIMAL_DEX.keys())
+except Exception:
+    pass
+
+
+def is_valid_animal(a: Any) -> bool:
+    """Validate that an animal is a legitimate OwO animal and not a tier name or help string."""
+    name = getattr(a, "name", None) or (a.get("name") if isinstance(a, Mapping) else str(a))
+    if not name:
+        return False
+    clean = str(name).strip().lower()
+    if clean in TIER_FILTER_NAMES:
+        return False
+    if clean in ANIMAL_CATALOG:
+        return True
+    norm = normalize_animal_name(clean)
+    if norm in ANIMAL_CATALOG and norm not in TIER_FILTER_NAMES:
+        return True
+    if getattr(a, "level", 0) > 0 and clean not in TIER_FILTER_NAMES and len(clean) >= 3:
+        return True
+    return False
+
+
+def is_valid_weapon(w: Any) -> bool:
+    """Validate that a weapon is legitimate and not a misparsed discord command keyword."""
+    w_id = getattr(w, "id", None) or (w.get("id") if isinstance(w, Mapping) else None)
+    if not w_id:
+        return True
+    clean_id = str(w_id).strip().lower()
+    if clean_id in DISCORD_HELP_KEYWORDS:
+        return False
+    w_name = getattr(w, "weapon_name", None) or (w.get("weapon_name") if isinstance(w, Mapping) else None)
+    if (w_name or "").lower() == "unknown weapon" and clean_id in DISCORD_HELP_KEYWORDS:
+        return False
+    return True
+
+
+class StrategyEngine(commands.Cog):
+    """OwO Strategy Engine & Tactical Optimizer Cog."""
+
+    def __init__(self, bot: commands.Bot, uid: Optional[str] = None) -> None:
+        self.bot = bot
+        base_dir = getattr(bot, "base_dir", os.getcwd())
+
+        # Determine account identifier
+        uid_val = uid or getattr(bot, "user_id", None) or (bot.user.id if getattr(bot, "user", None) else None)
+        account_id = str(uid_val) if uid_val is not None else None
+        if not account_id or account_id == "None":
+            token = getattr(bot, "token", None) or getattr(bot, "_token", None)
+            accounts_file = os.path.join(base_dir, "config", "accounts.json")
+            if token and os.path.exists(accounts_file):
+                try:
+                    with open(accounts_file, "r", encoding="utf-8") as f:
+                        acc_data = json.load(f)
+                    for acc in acc_data.get("accounts", []):
+                        if acc.get("token") == token:
+                            if acc.get("user_id"):
+                                account_id = str(acc["user_id"])
+                                break
+                            elif acc.get("id"):
+                                account_id = str(acc["id"])
+                                break
+                            elif acc.get("name"):
+                                account_id = str(acc["name"])
+                                break
+                    if not account_id or account_id == "None":
+                        import base64
+                        part = token.split(".")[0]
+                        padding = "=" * ((4 - len(part) % 4) % 4)
+                        decoded = base64.b64decode(part + padding).decode("utf-8", errors="ignore")
+                        if decoded.isdigit():
+                            account_id = decoded
+                except Exception:
+                    pass
+        if not account_id or account_id == "None":
+            account_id = "default"
+
+        self.uid = account_id
+        self.account_id = account_id
+        self.state_file = os.path.join(base_dir, "data", f"strategy_state_{account_id}.json")
+
+        cfg = getattr(bot, "config", {}).get("strategy", {}) if hasattr(bot, "config") and isinstance(bot.config, dict) else {}
+        self.enabled = bool(cfg.get("enabled", True))
+        self.interval = cfg.get("interval", [3600, 7200])
+        self.auto_equip = bool(cfg.get("auto_equip", True))
+        self.auto_dismantle = bool(cfg.get("auto_dismantle", False))
+        self.dry_run = bool(cfg.get("dry_run", True if not cfg else False))
+        self.dismantle_quality_threshold = float(cfg.get("dismantle_quality_threshold", 40.0))
+        self.protect_quality_threshold = float(cfg.get("protect_quality_threshold", 80.0))
+        self.boss_raid_solver = bool(cfg.get("boss_raid_solver", True))
+        self.owo_bot_id = str(getattr(bot, "owo_bot_id", OWO_BOT_ID))
+        self.team_verified_from_owo = False
+        self.pending_equip: Optional[dict[str, Any]] = None
+        self._lock: Optional[asyncio.Lock] = None
+        self._latest_opt_winner: Optional[CandidateTeam] = None
+
+        # Telemetry duplicate log trackers
+        self._last_active_team_sig: Optional[tuple] = None
+        self._last_weapon_page_seen: Optional[tuple] = None
+        self._last_zoo_count: int = -1
+        self._last_neon_calc_msg_id: Optional[int | str] = None
+
+        self._load_state()
+        if self.current_team_animals:
+            self._last_active_team_sig = tuple(
+                (a.name.lower(), getattr(a, "equipped_weapon_id", None))
+                for a in self.current_team_animals
+            )
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        if getattr(self, "_lock", None) is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    def sanitize_inventories(self) -> None:
+        """Filter out false positive tier names from animals and command keywords from weapons."""
+        self.inventory_animals = [a for a in self.inventory_animals if is_valid_animal(a)]
+        self.current_team_animals = [a for a in self.current_team_animals if is_valid_animal(a)]
+        self.inventory_weapons = [w for w in self.inventory_weapons if is_valid_weapon(w)]
+        self.current_team_weapons = [w for w in self.current_team_weapons if is_valid_weapon(w)]
+
+    _sanitize_inventories = sanitize_inventories
+
+    def _load_state(self) -> None:
+        """Load cached team, inventory snapshot, and settings from JSON."""
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        self.current_team_animals: list[OwnedAnimal] = []
+        self.current_team_weapons: list[OwnedWeapon] = []
+        self.inventory_animals: list[OwnedAnimal] = []
+        self.inventory_weapons: list[OwnedWeapon] = []
+        self.current_shards: int = 650
+        self.last_updated: float = 0.0
+        self.lineup_history: list[dict[str, Any]] = []
+
+        base_dir = getattr(self.bot, "base_dir", os.getcwd())
+        seed_file = os.path.join(base_dir, "data", "strategy_state.json")
+        target_file = self.state_file
+        file_to_load = None
+        if os.path.exists(target_file):
+            file_to_load = target_file
+        elif os.path.exists(seed_file):
+            file_to_load = seed_file
+
+        if file_to_load and os.path.exists(file_to_load):
+            try:
+                with open(file_to_load, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                team_data = data.get("team", {})
+                self.current_team_animals = [
+                    OwnedAnimal.from_dict(item) if isinstance(item, dict) else item
+                    for item in team_data.get("animals", [])
+                ]
+                self.current_team_weapons = [
+                    OwnedWeapon.from_dict(item) if isinstance(item, dict) else item
+                    for item in team_data.get("weapons", [])
+                ]
+                self.inventory_animals = [
+                    OwnedAnimal.from_dict(item) if isinstance(item, dict) else item
+                    for item in data.get("inventory_animals", [])
+                ]
+                self.inventory_weapons = [
+                    OwnedWeapon.from_dict(item) if isinstance(item, dict) else item
+                    for item in data.get("inventory_weapons", [])
+                ]
+                self.current_shards = int(data.get("current_shards", 650))
+                self.last_updated = float(data.get("last_updated", 0.0))
+                self.team_verified_from_owo = bool(data.get("team_verified", False))
+                self.lineup_history = list(data.get("lineup_history", []))
+            except Exception as exc:
+                logger.warning("Error reading strategy state from %s: %s", file_to_load, exc)
+
+        self.sanitize_inventories()
+
+        # Populate safe fallback defaults if state was empty
+        if not self.current_team_animals or not self.current_team_weapons:
+            self._init_default_fallback()
+
+    def _init_default_fallback(self) -> None:
+        """Initialize standard baseline defaults if no player snapshot exists yet."""
+        self.current_team_animals = [
+            OwnedAnimal(name="giraffbot", level=50, equipped_weapon_id="101"),
+            OwnedAnimal(name="owl", level=50, equipped_weapon_id="104"),
+            OwnedAnimal(name="lion", level=50, equipped_weapon_id="106"),
+        ]
+        self.current_team_weapons = [
+            OwnedWeapon(id="101", weapon_name="Defender's Aegis", quality_val=85.0, quality_is_exact=True),
+            OwnedWeapon(id="104", weapon_name="Healing Staff", quality_val=82.0, quality_is_exact=True),
+            OwnedWeapon(id="106", weapon_name="Great Sword", quality_val=88.0, quality_is_exact=True),
+        ]
+        self.inventory_animals = [
+            OwnedAnimal(name="giraffbot", level=50),
+            OwnedAnimal(name="owl", level=50),
+            OwnedAnimal(name="cow", level=50),
+            OwnedAnimal(name="dino", level=50),
+            OwnedAnimal(name="eagle", level=50),
+            OwnedAnimal(name="fox", level=50),
+            OwnedAnimal(name="lion", level=50),
+            OwnedAnimal(name="tiger", level=50),
+            OwnedAnimal(name="wolf", level=50),
+            OwnedAnimal(name="flamingo", level=50),
+            OwnedAnimal(name="snake", level=50),
+            OwnedAnimal(name="deer", level=50),
+        ]
+        self.inventory_weapons = [
+            OwnedWeapon(id="101", weapon_name="Defender's Aegis", quality_val=85.0, quality_is_exact=True),
+            OwnedWeapon(id="102", weapon_name="Glacial Axe", quality_val=92.0, quality_is_exact=True),
+            OwnedWeapon(id="103", weapon_name="Compound Bow", quality_val=96.0, quality_is_exact=True),
+            OwnedWeapon(id="104", weapon_name="Healing Staff", quality_val=82.0, quality_is_exact=True),
+            OwnedWeapon(id="105", weapon_name="Poison Dagger", quality_val=78.0, quality_is_exact=True),
+            OwnedWeapon(id="106", weapon_name="Great Sword", quality_val=88.0, quality_is_exact=True),
+            OwnedWeapon(id="107", weapon_name="War Banner", quality_val=74.0, quality_is_exact=True),
+            OwnedWeapon(id="108", weapon_name="Magic Wand", quality_val=65.0, quality_is_exact=True),
+            OwnedWeapon(id="201", weapon_name="Rusty Dagger", quality_val=15.0, quality_is_exact=True),
+            OwnedWeapon(id="202", weapon_name="Worn Shield", quality_val=22.0, quality_is_exact=True),
+            OwnedWeapon(id="203", weapon_name="Broken Bow", quality_val=30.0, quality_is_exact=True),
+            OwnedWeapon(id="b204", weapon_name="Empowered Club", quality_val=38.0, quality_is_exact=True),
+        ]
+        self._save_state()
+
+    def _archive_lineup(self, winner: CandidateTeam) -> None:
+        """Record newly equipped lineup into database history log."""
+        if not hasattr(self, "lineup_history"):
+            self.lineup_history = []
+        entry = {
+            "timestamp": time.time(),
+            "animals": list(winner.animal_names),
+            "weapons": list(winner.weapon_names),
+            "win_rate": round(winner.fine_win_rate * 100.0, 1) if getattr(winner, "fine_win_rate", None) is not None else None,
+            "total_ehp": round(winner.evaluation.total_team_ehp, 1) if getattr(winner, "evaluation", None) is not None else None,
+        }
+        self.lineup_history.append(entry)
+        if len(self.lineup_history) > 15:
+            self.lineup_history = self.lineup_history[-15:]
+
+    def _save_state(self) -> None:
+        """Persist state cache to disk."""
+        try:
+            payload = {
+                "team": {
+                    "animals": [a.to_dict() for a in self.current_team_animals],
+                    "weapons": [w.to_dict() for w in self.current_team_weapons],
+                },
+                "inventory_animals": [a.to_dict() for a in self.inventory_animals],
+                "inventory_weapons": [w.to_dict() for w in self.inventory_weapons],
+                "current_shards": self.current_shards,
+                "last_updated": time.time(),
+                "dry_run": self.dry_run,
+                "team_verified": getattr(self, "team_verified_from_owo", False),
+                "lineup_history": getattr(self, "lineup_history", []),
+            }
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=4)
+        except Exception as exc:
+            logger.error("Failed to save strategy state: %s", exc)
+
+    def get_state_snapshot(self) -> dict[str, Any]:
+        """Return serialized state snapshot for REST API and dashboard."""
+        return {
+            "team": {
+                "animals": [a.to_dict() for a in self.current_team_animals],
+                "weapons": [w.to_dict() for w in self.current_team_weapons],
+            },
+            "inventory_animals": [a.to_dict() for a in self.inventory_animals],
+            "inventory_weapons": [w.to_dict() for w in self.inventory_weapons],
+            "current_shards": self.current_shards,
+            "last_updated": self.last_updated,
+            "dry_run": self.dry_run,
+            "team_verified": getattr(self, "team_verified_from_owo", False),
+            "lineup_history": getattr(self, "lineup_history", []),
+            "enabled": getattr(self, "enabled", True),
+            "auto_equip": getattr(self, "auto_equip", True),
+            "auto_dismantle": getattr(self, "auto_dismantle", False),
+            "interval": getattr(self, "interval", [3600, 7200]),
+            "dismantle_quality_threshold": getattr(self, "dismantle_quality_threshold", 40.0),
+            "protect_quality_threshold": getattr(self, "protect_quality_threshold", 80.0),
+            "boss_raid_solver": getattr(self, "boss_raid_solver", True),
+        }
+
+    def _compute_interval_delay(self) -> float:
+        """Compute delay in seconds from configured interval (int or [min, max])."""
+        if isinstance(self.interval, (list, tuple)) and len(self.interval) >= 2:
+            return float(random.uniform(float(self.interval[0]), float(self.interval[1])))
+        elif isinstance(self.interval, (int, float)):
+            return float(self.interval)
+        return 3600.0
+
+    async def register_actions(self) -> None:
+        """Register periodic strategy autopilot optimization task with NeuraBot scheduler."""
+        cfg = {}
+        if hasattr(self.bot, "config") and isinstance(self.bot.config, dict):
+            cfg = self.bot.config.get("strategy") or self.bot.config.get("commands", {}).get("strategy", {})
+
+        self.enabled = bool(cfg.get("enabled", True))
+        self.interval = cfg.get("interval", [3600, 7200])
+        self.auto_equip = bool(cfg.get("auto_equip", True))
+        self.auto_dismantle = bool(cfg.get("auto_dismantle", False))
+        self.dry_run = bool(cfg.get("dry_run", False))
+        self.dismantle_quality_threshold = float(cfg.get("dismantle_quality_threshold", 40.0))
+        self.protect_quality_threshold = float(cfg.get("protect_quality_threshold", 80.0))
+        self.boss_raid_solver = bool(cfg.get("boss_raid_solver", True))
+
+        if not self.enabled:
+            if hasattr(self.bot, "cmd_states") and "strategy" in self.bot.cmd_states:
+                del self.bot.cmd_states["strategy"]
+            if hasattr(self.bot, "log"):
+                self.bot.log("STRATEGY", "StrategyEngine scheduler disabled in config.")
+            return
+
+        delay = self._compute_interval_delay()
+
+        if hasattr(self.bot, "neura_register_command"):
+            await self.bot.neura_register_command(
+                "strategy",
+                self._autopilot_tick,
+                priority=4,
+                delay=delay,
+                initial_offset=20,
+            )
+            if hasattr(self.bot, "log"):
+                self.bot.log(
+                    "STRATEGY",
+                    f"StrategyEngine scheduler registered (delay: {delay:.1f}s, auto_equip={self.auto_equip}, auto_dismantle={self.auto_dismantle}, dry_run={self.dry_run})"
+                )
+
+        if hasattr(self.bot, "neura_enqueue"):
+            await self.bot.neura_enqueue("owo team", priority=2)
+            await self.bot.neura_enqueue("owo zoo", priority=2)
+            await self.bot.neura_enqueue("owo weapon", priority=2)
+
+    async def execute_live_equip(
+        self,
+        candidate_or_commands: CandidateTeam | list[str] | None = None,
+        priority: int = 2,
+        winner_candidate: Optional[CandidateTeam] = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Generate and enqueue in-game team/weapon equip commands with high priority (<= 2)."""
+        equip_cmds: list[str] = []
+        winner: Optional[CandidateTeam] = None
+
+        if isinstance(candidate_or_commands, CandidateTeam):
+            winner = candidate_or_commands
+            self._latest_opt_winner = winner
+            equip_cmds = NeonUtilExporter.generate_owo_game_commands(
+                winner,
+                current_team=self.current_team_animals if getattr(self, "team_verified_from_owo", False) else None
+            )
+        elif isinstance(candidate_or_commands, list):
+            equip_cmds = list(candidate_or_commands)
+            winner = winner_candidate or getattr(self, "_latest_opt_winner", None)
+        else:
+            result, _, _ = self.run_optimization(coarse_seeds=5, fine_seeds=15)
+            winner = result.winner
+            self._latest_opt_winner = winner
+            equip_cmds = NeonUtilExporter.generate_owo_game_commands(
+                winner,
+                current_team=self.current_team_animals if getattr(self, "team_verified_from_owo", False) else None
+            )
+
+        # Enforce high priority (<= 2) so equip runs ahead of lower priority tasks
+        eff_priority = min(2, priority)
+        if hasattr(self.bot, "get_cmd_priority"):
+            eff_priority = min(2, self.bot.get_cmd_priority("strategy_equip", 2))
+
+        if hasattr(self.bot, "neura_enqueue"):
+            for cmd in equip_cmds:
+                await self.bot.neura_enqueue(cmd, priority=eff_priority)
+            # Enqueue owo team after equip sequence to verify and capture newly active team
+            await self.bot.neura_enqueue("owo team", priority=eff_priority)
+
+        # Optimistically update internal state and file immediately so UI & API reflect new lineup
+        if winner:
+            self.current_team_animals = list(winner.animals)
+            self.current_team_weapons = list(winner.weapons)
+            self._archive_lineup(winner)
+            self._save_state()
+        elif equip_cmds:
+            new_animals = list(self.current_team_animals) if self.current_team_animals else []
+            while len(new_animals) < 3:
+                new_animals.append(None)
+            for cmd in equip_cmds:
+                m_team = re.match(r"^owo\s+team\s+add\s+(\S+)\s+([1-3])$", cmd.strip(), re.IGNORECASE)
+                if m_team:
+                    p_name, p_pos = m_team.group(1).lower(), int(m_team.group(2))
+                    matched_a = next((a for a in self.inventory_animals if a.name.lower() == p_name), None)
+                    if not matched_a:
+                        matched_a = OwnedAnimal(name=p_name, level=50)
+                    new_animals[p_pos - 1] = matched_a
+            
+            valid_animals = [a for a in new_animals if a is not None]
+            if valid_animals:
+                self.current_team_animals = valid_animals
+                self._save_state()
+
+        log_enqueue = kwargs.get("log_enqueue", True)
+        if log_enqueue and hasattr(self.bot, "log"):
+            anim_summary = ", ".join(getattr(a, "name", str(a)) for a in self.current_team_animals) if self.current_team_animals else "Lineup"
+            self.bot.log(
+                "STRATEGY",
+                f"Enqueued {len(equip_cmds)} equip commands (priority {eff_priority}) for [{anim_summary}]"
+            )
+
+        return equip_cmds
+
+    async def _autopilot_tick(self) -> list[str]:
+        """Periodic autopilot loop: runs tournament optimization, auto-equips, and safe dismantle."""
+        if not getattr(self, "enabled", True):
+            return []
+
+        equip_cmds: list[str] = []
+        try:
+            result, _, _ = self.run_optimization(coarse_seeds=10, fine_seeds=50)
+            winner = result.winner
+
+            if getattr(self, "auto_equip", True):
+                equip_cmds = await self.execute_live_equip(winner, priority=2, log_enqueue=False)
+                if hasattr(self.bot, "log"):
+                    animal_names = ", ".join(winner.animal_names)
+                    self.bot.log(
+                        "STRATEGY",
+                        f"Autopilot: Enqueued {len(equip_cmds)} equip commands for lineup ({animal_names}) (Win Rate: {winner.fine_win_rate * 100.0:.1f}%)"
+                    )
+
+            if getattr(self, "auto_dismantle", False) and not getattr(self, "dry_run", False):
+                plan = self.run_shard_planner(
+                    dismantle_threshold=getattr(self, "dismantle_quality_threshold", 40.0),
+                    protect_threshold=getattr(self, "protect_quality_threshold", 80.0),
+                    dry_run=False,
+                )
+                if plan.batch_commands:
+                    if hasattr(self.bot, "neura_enqueue"):
+                        for cmd in plan.batch_commands:
+                            await self.bot.neura_enqueue(cmd, priority=4)
+                    if hasattr(self.bot, "log"):
+                        self.bot.log(
+                            "STRATEGY",
+                            f"Autopilot: Enqueued {len(plan.batch_commands)} dismantle commands for {len(plan.safe_to_dismantle)} weapons (+{plan.projected_shards_gained} shards)"
+                        )
+
+            # Re-randomize next interval if range is configured
+            if hasattr(self.bot, "cmd_states") and "strategy" in self.bot.cmd_states:
+                next_delay = self._compute_interval_delay()
+                self.bot.cmd_states["strategy"]["delay"] = next_delay
+
+        except Exception as exc:
+            logger.error("Error in StrategyEngine _autopilot_tick: %s", exc, exc_info=True)
+            if hasattr(self.bot, "log"):
+                self.bot.log("ERROR", f"StrategyEngine autopilot tick error: {exc}")
+
+        return None
+
+    def _extract_message_text(self, message: discord.Message) -> str:
+        """Extract full plain text from message content, embeds, and components."""
+        chunks: list[str] = []
+        if getattr(message, "content", None):
+            chunks.append(str(message.content))
+        for embed in getattr(message, "embeds", []):
+            if getattr(embed, "title", None):
+                chunks.append(str(embed.title))
+            if getattr(embed, "description", None):
+                chunks.append(str(embed.description))
+            if getattr(embed, "author", None) and getattr(embed.author, "name", None):
+                chunks.append(str(embed.author.name))
+            if getattr(embed, "footer", None) and getattr(embed.footer, "text", None):
+                chunks.append(str(embed.footer.text))
+            raw_fields = getattr(embed, "fields", [])
+            if isinstance(raw_fields, (list, tuple)):
+                for field in raw_fields:
+                    fn = getattr(field, "name", "")
+                    fv = getattr(field, "value", "")
+                    chunks.append(f"{fn}\n{fv}")
+        return "\n".join(str(c) for c in chunks if c and not str(c).startswith("<MagicMock"))
+
+    # =========================================================================
+    # Strategy Evaluation & Simulation Core
+    # =========================================================================
+
+    def get_current_candidate_team(self) -> CandidateTeam:
+        """Construct CandidateTeam from cached team state, safely padded to 3 animals & 3 weapons."""
+        animals = list(self.current_team_animals)
+        while len(animals) < 3:
+            animals.append(OwnedAnimal(name="giraffbot", level=50))
+        weapons = list(self.current_team_weapons)
+        while len(weapons) < 3:
+            weapons.append(OwnedWeapon(id=f"W{len(weapons)+1}", weapon_name="Defender's Aegis", quality_val=50.0))
+        return CandidateTeam(
+            animals=animals[:3],
+            weapons=weapons[:3],
+        )
+
+    def evaluate_team(self, team: Optional[CandidateTeam] = None) -> dict[str, Any]:
+        """Evaluate team analytics, EHP breakdown, WP solvency, and benchmark win rate."""
+        target_team = team or self.get_current_candidate_team()
+        evaluation: CandidateEvaluation = evaluate_candidate(target_team.animals, target_team.weapons)
+        target_team.evaluation = evaluation
+
+        # Benchmark simulations
+        optimizer = TeamOptimizer(coarse_seeds=5, fine_seeds=15)
+        benchmark_team = optimizer.evaluate_fine_monte_carlo(target_team)
+
+        animal_labels = [getattr(a, "name", str(a)) for a in target_team.animals]
+        weapon_labels = [getattr(w, "weapon_name", getattr(w, "name", str(w))) for w in target_team.weapons]
+
+        pet_breakdowns: list[dict[str, Any]] = []
+        for pe in evaluation.pet_evaluations:
+            pet_breakdowns.append({
+                "animal": pe.animal_name,
+                "weapon": pe.weapon_name,
+                "role": pe.role,
+                "hp": pe.hp,
+                "wp": pe.wp,
+                "ehp_physical": round(pe.ehp_physical, 1),
+                "ehp_magical": round(pe.ehp_magical, 1),
+                "sustained_dps": round(pe.sustained_dps, 1),
+                "is_solvent": pe.is_solvent,
+            })
+
+        return {
+            "is_valid": evaluation.is_valid,
+            "animals": animal_labels,
+            "weapons": weapon_labels,
+            "frontline_ehp": round(evaluation.frontline_ehp, 1),
+            "total_team_ehp": round(evaluation.total_team_ehp, 1),
+            "sustained_dps": round(evaluation.sustained_dps, 1),
+            "wp_solvent": evaluation.wp_solvent,
+            "win_rate": round(benchmark_team.fine_win_rate * 100.0, 1),
+            "wilson_ci": [
+                round(benchmark_team.wilson_lower * 100.0, 1),
+                round(benchmark_team.wilson_upper * 100.0, 1),
+            ],
+            "synergies": list(evaluation.synergies),
+            "pet_breakdown": pet_breakdowns,
+        }
+
+    def run_optimization(
+        self,
+        coarse_seeds: int = 10,
+        fine_seeds: int = 50,
+    ) -> tuple[OptimizationResult, str, dict[str, Any]]:
+        """Run 3-Stage Multi-Fidelity Tournament Optimizer and generate reports."""
+        current_team = self.get_current_candidate_team()
+        optimizer = TeamOptimizer(coarse_seeds=coarse_seeds, fine_seeds=fine_seeds)
+
+        result: OptimizationResult = optimizer.optimize(
+            inventory_animals=self.inventory_animals,
+            inventory_weapons=self.inventory_weapons,
+            current_team=current_team,
+        )
+
+        self._latest_opt_winner = result.winner
+        md_report, json_report = generate_full_report(result, current_team)
+        return result, md_report, json_report
+
+    def run_boss_simulation(
+        self,
+        preset_name: str = "standard_cleave",
+        seeds_count: int = 10,
+    ) -> dict[str, Any]:
+        """Simulate 24-turn Guild Boss raid encounter."""
+        preset = STANDARD_BOSS_PRESETS.get(preset_name, STANDARD_BOSS_PRESETS["standard_cleave"])
+        solver = BossRaidSolver(preset)
+        team = self.get_current_candidate_team()
+
+        return solver.evaluate_lineup_monte_carlo(
+            candidate_animals=team.animals,
+            candidate_weapons=team.weapons,
+            level=50,
+            seeds_count=seeds_count,
+        )
+
+    def run_shard_planner(
+        self,
+        dismantle_threshold: Optional[float] = None,
+        protect_threshold: Optional[float] = None,
+        dry_run: Optional[bool] = None,
+    ) -> DismantlePlan:
+        """Generate safe shard dismantle plan with protected active team weapons."""
+        d_thresh = dismantle_threshold if dismantle_threshold is not None else getattr(self, "dismantle_quality_threshold", 40.0)
+        p_thresh = protect_threshold if protect_threshold is not None else getattr(self, "protect_quality_threshold", 80.0)
+        dr = dry_run if dry_run is not None else getattr(self, "dry_run", True)
+        planner = ShardPlanner(
+            current_shards=self.current_shards,
+            quality_dismantle_threshold=d_thresh,
+            quality_protect_threshold=p_thresh,
+            dry_run=dr,
+        )
+        active_ids = {
+            getattr(w, "id", None)
+            for w in self.current_team_weapons
+            if getattr(w, "id", None)
+        }
+        return planner.generate_plan(
+            self.inventory_weapons,
+            protected_weapon_ids=active_ids,
+        )
+
+    # =========================================================================
+    # Discord Event Listeners
+    # =========================================================================
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        """Handle incoming messages for OwO telemetry and user triggers."""
+        author_id_str = str(getattr(message.author, "id", ""))
+        author_name = str(getattr(message.author, "name", "")).lower()
+
+        # 1. Telemetry from OwO Bot
+        if author_id_str == self.owo_bot_id or author_id_str == str(OWO_BOT_ID):
+            await self._handle_owo_telemetry(message)
+            return
+
+        # 2. Also check NeonUtil or Reaction Bot messages if present
+        if author_id_str in ("851436490415931422", "519287796549156864") or "neonutil" in author_name:
+            await self._handle_owo_telemetry(message)
+            return
+
+        # 3. User Trigger commands
+        await self._handle_user_commands(message)
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
+        """Handle edited messages when OwO or NeonUtil populates embeds asynchronously."""
+        author_id_str = str(after.author.id)
+        author_name = str(getattr(after.author, "name", "")).lower()
+        if (
+            author_id_str in (self.owo_bot_id, str(OWO_BOT_ID), "851436490415931422", "519287796549156864")
+            or "neonutil" in author_name
+        ):
+            await self._handle_owo_telemetry(after)
+
+    async def _handle_owo_telemetry(self, message: discord.Message) -> None:
+        """Ingest team, weapon inventory, inspect, and zoo messages from OwO and NeonUtil."""
+        try:
+            async with self.lock:
+                # 1. Check for NeonUtil calculation embeds FIRST (exact values, locked status, dismantle flags)
+                neon_calc_weapons = parse_neon_calculation_message(message)
+                if neon_calc_weapons:
+                    msg_id = getattr(message, "id", None)
+                    if msg_id and msg_id == self._last_neon_calc_msg_id:
+                        return
+                    self._last_neon_calc_msg_id = msg_id
+
+                    real_map = {w.id: w for w in self.inventory_weapons}
+                    enriched_count = 0
+                    for nw in neon_calc_weapons:
+                        if nw.id in real_map:
+                            ew = real_map[nw.id]
+                            if nw.quality_val is not None:
+                                ew.quality_val = nw.quality_val
+                                ew.quality_is_exact = True
+                            if nw.passives:
+                                ew.passives = nw.passives
+                            if nw.is_locked:
+                                ew.is_locked = True
+                            if nw.max_possible_quality is not None:
+                                ew.max_possible_quality = nw.max_possible_quality
+                            if nw.is_dismantle_candidate:
+                                ew.is_dismantle_candidate = True
+                            if nw.is_shard_candidate:
+                                ew.is_shard_candidate = True
+                            enriched_count += 1
+                        else:
+                            real_map[nw.id] = nw
+                            enriched_count += 1
+                    self.inventory_weapons = list(real_map.values())
+                    self.sanitize_inventories()
+                    self._save_state()
+                    if hasattr(self.bot, "log"):
+                        self.bot.log("STRATEGY", f"Ingested NeonUtil calculations: enriched {enriched_count} weapons with exact stats/shards")
+                    return
+
+                # 2. Try unified native OwO message dispatcher
+                parsed_res = parse_owo_message(message, check_bot_id=False)
+                if parsed_res is not None:
+                    if isinstance(parsed_res, ParsedTeam):
+                        if parsed_res.animals:
+                            # Preserve weapon IDs if battle embed only had weapon names
+                            if not parsed_res.weapons and self.current_team_weapons:
+                                for slot_i, a in enumerate(parsed_res.animals):
+                                    if not getattr(a, "equipped_weapon_id", None) and slot_i < len(self.current_team_weapons):
+                                        a.equipped_weapon_id = self.current_team_weapons[slot_i].id
+
+                            team_sig = tuple(
+                                (a.name.lower(), getattr(a, "equipped_weapon_id", None))
+                                for a in parsed_res.animals
+                            )
+                            has_changed = (team_sig != self._last_active_team_sig)
+                            self._last_active_team_sig = team_sig
+
+                            self.current_team_animals = parsed_res.animals
+                            if parsed_res.weapons:
+                                self.current_team_weapons = parsed_res.weapons
+                            self.sanitize_inventories()
+                            self.team_verified_from_owo = True
+                            self.pending_equip = None
+                            self._save_state()
+                            if has_changed and hasattr(self.bot, "log"):
+                                animal_names = ", ".join(a.name for a in self.current_team_animals)
+                                self.bot.log("STRATEGY", f"Updated active team from OwO: ({animal_names})")
+                            return
+
+                    elif isinstance(parsed_res, ParsedWeaponInv):
+                        owned_weapons = parsed_res.to_owned_weapons()
+                        page_sig = (parsed_res.current_page, parsed_res.total_pages, len(owned_weapons) if owned_weapons else 0)
+                        page_changed = (page_sig != self._last_weapon_page_seen)
+                        self._last_weapon_page_seen = page_sig
+
+                        if owned_weapons:
+                            real_map = {
+                                w.id: w for w in self.inventory_weapons
+                                if w.id not in FALLBACK_WEAPON_IDS and not (w.id.isdigit() and int(w.id) < 1000)
+                            }
+                            # Clean replacement if this is page 1 of 1
+                            if parsed_res.current_page == 1 and parsed_res.total_pages <= 1:
+                                real_map = {}
+                            for w in owned_weapons:
+                                real_map[w.id] = w
+                            self.inventory_weapons = list(real_map.values())
+                            self.sanitize_inventories()
+                            self._save_state()
+                            if page_changed and hasattr(self.bot, "log"):
+                                self.bot.log(
+                                    "STRATEGY",
+                                    f"Updated weapon inventory from OwO: {len(self.inventory_weapons)} weapons (Page {parsed_res.current_page}/{parsed_res.total_pages})"
+                                )
+
+                        # Trigger calculate reaction to invoke NeonUtil calculator
+                        asyncio.create_task(self._trigger_calculate_reaction(message))
+
+                        # Advance pagination if more pages exist
+                        if getattr(parsed_res, "has_next_page", False) or parsed_res.current_page < parsed_res.total_pages:
+                            asyncio.create_task(self._advance_weapon_page(message, parsed_res.current_page, parsed_res.total_pages))
+                        return
+
+                    elif isinstance(parsed_res, ParsedWeaponInspect):
+                        single_w = parsed_res.to_owned_weapon()
+                        existing_map = {w.id: w for w in self.inventory_weapons}
+                        existing_map[single_w.id] = single_w
+                        self.inventory_weapons = list(existing_map.values())
+                        self.sanitize_inventories()
+                        self._save_state()
+                        if hasattr(self.bot, "log"):
+                            self.bot.log("STRATEGY", f"Updated weapon inspection for {single_w.weapon_name} ({single_w.id})")
+                        # Trigger calculate reaction on single weapon inspection
+                        asyncio.create_task(self._trigger_calculate_reaction(message))
+                        return
+
+                    elif isinstance(parsed_res, ParsedZoo):
+                        owned_zoo = parsed_res.to_owned_animals()
+                        if owned_zoo:
+                            self.inventory_animals = [a for a in owned_zoo if getattr(a, "count", 1) > 0]
+                            self.sanitize_inventories()
+                            self._save_state()
+                            zoo_count = len(self.inventory_animals)
+                            if zoo_count != self._last_zoo_count and hasattr(self.bot, "log"):
+                                self._last_zoo_count = zoo_count
+                                self.bot.log("STRATEGY", f"Updated zoo animals from OwO: {zoo_count} species")
+                            return
+
+
+
+                # 2. Fallback to text parsing (NeonUtil pages, custom text rows)
+                text = self._extract_message_text(message)
+                if not text:
+                    return
+
+                # Check for active team update fallback
+                parsed_team = parse_team_message(text)
+                if parsed_team and parsed_team.get("animals") and parsed_team.get("weapons"):
+                    team_sig = tuple(
+                        (a.name.lower(), getattr(a, "equipped_weapon_id", None))
+                        for a in parsed_team["animals"]
+                    )
+                    has_changed = (team_sig != self._last_active_team_sig)
+                    self._last_active_team_sig = team_sig
+
+                    self.current_team_animals = parsed_team["animals"]
+                    self.current_team_weapons = parsed_team["weapons"]
+                    self.team_verified_from_owo = True
+                    self._save_state()
+                    if has_changed and hasattr(self.bot, "log"):
+                        animal_names = ", ".join(a.name for a in self.current_team_animals)
+                        self.bot.log("STRATEGY", f"Updated active team telemetry: ({animal_names})")
+                    return
+
+                # Check for weapon inventory update fallback (owo weapon inv / Neon inventory)
+                parsed_inv = parse_weapon_inventory_message(text)
+                if parsed_inv:
+                    existing_map = {w.id: w for w in self.inventory_weapons}
+                    for w in parsed_inv:
+                        existing_map[w.id] = w
+                    self.inventory_weapons = list(existing_map.values())
+                    self.sanitize_inventories()
+                    self._save_state()
+                    if hasattr(self.bot, "log"):
+                        self.bot.log("STRATEGY", f"Updated weapon inventory telemetry: {len(self.inventory_weapons)} weapons stored")
+
+                # 3. Inspect command feedback from OwO (Confirmation / Rejection / Cooldown)
+                text_lower = text.lower()
+                confirm_signals = [
+                    "is now wielding",
+                    "is now holding",
+                    "your team has been updated",
+                    "added to your team",
+                    "you added",
+                    "equipped on",
+                    "has been set",
+                    "successfully equipped",
+                    "removed slot",
+                    "removed pet",
+                    "swapped slot"
+                ]
+                reject_signals = [
+                    "could not find that weapon or animal",
+                    "you do not own this animal",
+                    "you do not have a weapon with this id",
+                    "your team is full",
+                    "invalid animal",
+                    "invalid position"
+                ]
+
+                first_line = text.strip().splitlines()[0][:90].strip() if text.strip() else ""
+                if any(sig in text_lower for sig in confirm_signals):
+                    self.team_verified_from_owo = True
+                    if hasattr(self.bot, "log"):
+                        self.bot.log("STRATEGY_VERIFIED", f"OwO verified equip: {first_line}")
+                    self._save_state()
+
+                elif any(sig in text_lower for sig in reject_signals):
+                    if hasattr(self.bot, "log"):
+                        self.bot.log("STRATEGY_WARN", f"OwO rejected command: {first_line}")
+                    if hasattr(self.bot, "neura_enqueue"):
+                        await self.bot.neura_enqueue("owo zoo", priority=3)
+                        await self.bot.neura_enqueue("owo weapon", priority=3)
+        except Exception as exc:
+            logger.debug("Telemetry parsing error: %s", exc)
+
+    async def _trigger_calculate_reaction(self, message: discord.Message) -> None:
+        """Trigger calculate reaction (<a:calculate:1263895039172677692> or 🧮) to invoke NeonUtil."""
+        await asyncio.sleep(random.uniform(0.6, 1.2))
+        try:
+            calc_reaction = None
+            if hasattr(message, "reactions") and message.reactions:
+                for r in message.reactions:
+                    emoji_name = getattr(r.emoji, "name", "") or str(r.emoji)
+                    emoji_id = getattr(r.emoji, "id", None)
+                    if "calculate" in emoji_name.lower() or str(emoji_id) == "1263895039172677692":
+                        calc_reaction = r
+                        break
+            if calc_reaction is not None:
+                await message.add_reaction(calc_reaction.emoji)
+            else:
+                try:
+                    emoji = discord.PartialEmoji(name="calculate", id=1263895039172677692, animated=True)
+                    await message.add_reaction(emoji)
+                except Exception:
+                    await message.add_reaction("🧮")
+            if hasattr(self.bot, "log"):
+                self.bot.log("STRATEGY", "Dispatched calculate reaction to invoke NeonUtil weapon valuations.")
+        except Exception as e:
+            logger.debug("Failed to trigger calculate reaction: %s", e)
+
+    async def _advance_weapon_page(self, message: discord.Message, current_page: int, total_pages: int) -> None:
+        """Advance weapon inventory page using Discord Component Button or command fallback."""
+        if current_page >= total_pages:
+            return
+        await asyncio.sleep(random.uniform(1.8, 3.2))  # Safe humanized interval
+        if hasattr(self.bot, "log"):
+            self.bot.log("STRATEGY", f"Advancing weapon inventory page ({current_page}/{total_pages})...")
+        success = False
+        if hasattr(self.bot, "interactions"):
+            success = await self.bot.interactions.click_button("paged_next", message)
+        if not success:
+            # Fallback command if button was disabled or REST interaction did not advance
+            if hasattr(self.bot, "neura_enqueue"):
+                await self.bot.neura_enqueue(f"owo weapon {current_page + 1}", priority=2)
+
+    async def _handle_user_commands(self, message: discord.Message) -> None:
+        """Match and dispatch strategy engine chat triggers."""
+        raw = (message.content or "").strip()
+        lowered = raw.lower()
+
+        # Normalization of trigger prefix
+        if lowered in ("!owo-eval", "owo eval", ".owo-eval", "!eval"):
+            await self._cmd_eval(message.channel)
+        elif lowered in ("!owo-opt", "owo opt", ".owo-opt", "!opt"):
+            await self._cmd_opt(message.channel)
+        elif lowered in ("!owo-boss", "owo boss", ".owo-boss", "!boss"):
+            await self._cmd_boss(message.channel)
+        elif any(lowered == pfx or lowered.startswith(f"{pfx} ") for pfx in ("!owo-shards", "owo shards", ".owo-shards", "!shards")):
+            args = ""
+            for pfx in ("!owo-shards", "owo shards", ".owo-shards", "!shards"):
+                if lowered == pfx or lowered.startswith(f"{pfx} "):
+                    args = lowered[len(pfx):].strip()
+                    break
+            await self._cmd_shards(message.channel, args=args)
+        elif lowered in ("!owo-equip", "owo equip", ".owo-equip", "!equip"):
+            await self._cmd_equip(message.channel)
+
+    # =========================================================================
+    # Bot Command Implementations & Formatters
+    # =========================================================================
+
+    async def _cmd_eval(self, channel: discord.abc.Messageable) -> None:
+        """Execute !owo-eval and respond with team metrics."""
+        try:
+            eval_data = self.evaluate_team()
+            animals_str = " / ".join(f"**{a.title()}**" for a in eval_data["animals"])
+            weapons_str = " / ".join(eval_data["weapons"])
+            synergies_str = "\n".join(f"  • {s}" for s in eval_data["synergies"]) or "  • Balanced standard setup"
+
+            response = (
+                f"📊 **[OwO Strategy Engine — Team Evaluation]**\n"
+                f"**Active Lineup:** {animals_str}\n"
+                f"**Weapons:** {weapons_str}\n"
+                f"─────────────────────────────\n"
+                f"🛡️ **Total Team EHP:** `{eval_data['total_team_ehp']:,}` (Frontline: `{eval_data['frontline_ehp']:,}`)\n"
+                f"⚔️ **Theoretical Sustained DPS:** `{eval_data['sustained_dps']:,}` / turn\n"
+                f"⚡ **WP Solvency:** {'✅ Solvent (8+ Turns)' if eval_data['wp_solvent'] else '⚠️ WP Depletion Risk'}\n"
+                f"🏆 **Benchmark Win Rate:** **`{eval_data['win_rate']}%`** "
+                f"(95% CI: `[{eval_data['wilson_ci'][0]}% - {eval_data['wilson_ci'][1]}%]`)\n\n"
+                f"✨ **Synergies Detected:**\n{synergies_str}"
+            )
+            await channel.send(response)
+            if hasattr(self.bot, "log"):
+                self.bot.log("STRATEGY", f"Executed !owo-eval (Win rate: {eval_data['win_rate']}%)")
+        except Exception as exc:
+            logger.error("Error executing !owo-eval: %s", exc)
+            await channel.send(f"❌ Strategy Evaluation Error: `{exc}`")
+
+    async def _cmd_opt(self, channel: discord.abc.Messageable) -> None:
+        """Execute !owo-opt and respond with optimal tournament winner & equip commands."""
+        status_msg = await channel.send("⏳ Running 3-Stage Multi-Fidelity Tournament Optimizer...")
+        try:
+            t0 = time.perf_counter()
+            result, md_report, json_report = self.run_optimization(coarse_seeds=10, fine_seeds=50)
+            elapsed = time.perf_counter() - t0
+
+            winner = result.winner
+            winner_animals = " / ".join(f"**{a.title()}**" for a in winner.animal_names)
+            winner_weapons = " / ".join(winner.weapon_names)
+            baseline_wr = result.current_team_benchmark.fine_win_rate * 100.0 if result.current_team_benchmark else 0.0
+            winner_wr = winner.fine_win_rate * 100.0
+            delta_wr = result.win_rate_delta * 100.0
+
+            # In-game equip commands
+            equip_cmds = NeonUtilExporter.generate_owo_game_commands(
+                winner,
+                current_team=self.current_team_animals if getattr(self, "team_verified_from_owo", False) else None
+            )
+            equip_cmds_str = "\n".join(f"`{cmd}`" for cmd in equip_cmds)
+
+            synergies = winner.evaluation.synergies if winner.evaluation else []
+            synergies_str = "\n".join(f"  • {s}" for s in synergies) or "  • Maximum EHP frontline with dual carries"
+
+            response = (
+                f"🏆 **[OwO Strategy Engine — 3-Stage Tournament Winner]**\n"
+                f"**Optimal Lineup:** {winner_animals}\n"
+                f"**Equipped Weapons:** {winner_weapons}\n"
+                f"─────────────────────────────\n"
+                f"📈 **Win Rate:** **`{winner_wr:.1f}%`** (Baseline: `{baseline_wr:.1f}%` | Delta: **`+{delta_wr:.1f}%`**)\n"
+                f"🛡️ **Team EHP:** `{winner.evaluation.total_team_ehp if winner.evaluation else 0:,.0f}` | "
+                f"**DPS:** `{winner.evaluation.sustained_dps if winner.evaluation else 0:,.0f}`\n"
+                f"⏱️ **Computed in:** `{elapsed:.2f}s` (Simulations: `{result.total_simulations}`)\n\n"
+                f"✨ **Tactical Synergies:**\n{synergies_str}\n\n"
+                f"📋 **In-Game Equip Commands:**\n{equip_cmds_str}"
+            )
+            await status_msg.edit(content=response)
+            if hasattr(self.bot, "log"):
+                self.bot.log("STRATEGY", f"Optimization complete (+{delta_wr:.1f}% delta in {elapsed:.2f}s)")
+        except Exception as exc:
+            logger.error("Error executing !owo-opt: %s", exc)
+            await status_msg.edit(content=f"❌ Optimization Error: `{exc}`")
+
+    async def _cmd_boss(self, channel: discord.abc.Messageable) -> None:
+        """Execute !owo-boss and respond with 24-turn raid simulation metrics."""
+        try:
+            report = self.run_boss_simulation(preset_name="standard_cleave", seeds_count=10)
+            response = (
+                f"👹 **[OwO Strategy Engine — Guild Boss Raid Simulation]**\n"
+                f"**Boss Encounter:** **`{report.get('boss_name', 'Abyssal Behemoth')}`** (Preset: `{report.get('preset_slug', 'standard_cleave')}`)\n"
+                f"─────────────────────────────\n"
+                f"💥 **Average Raid Damage Dealt:** **`{report['avg_damage_dealt']:,.0f}`**\n"
+                f"⏱️ **Average Turns Survived:** **`{report['avg_turns_survived']:.1f}`** / 24 turns\n"
+                f"🛡️ **Full 24-Turn Survival Rate:** **`{report['full_24_turns_rate_percent']:.1f}%`**\n"
+                f"⭐ **Composite Raid Score:** **`{report['composite_score']:,.0f} pts`**\n\n"
+                f"💡 *Raid Tip: Tanks with Defender's Aegis and high PR mitigate Boss cleave swings.*"
+            )
+            await channel.send(response)
+            if hasattr(self.bot, "log"):
+                self.bot.log("STRATEGY", f"Simulated Guild Boss raid (Avg Dmg: {report['avg_damage_dealt']:,.0f})")
+        except Exception as exc:
+            logger.error("Error executing !owo-boss: %s", exc)
+            await channel.send(f"❌ Boss Simulation Error: `{exc}`")
+
+    async def _cmd_shards(self, channel: discord.abc.Messageable, args: str = "") -> None:
+        """Execute !owo-shards and provide safe dismantle plan, executing if dry_run=False and confirmed/auto."""
+        try:
+            d_thresh = getattr(self, "dismantle_quality_threshold", 40.0)
+            p_thresh = getattr(self, "protect_quality_threshold", 80.0)
+            is_dry_run = getattr(self, "dry_run", True)
+            auto_dismantle = getattr(self, "auto_dismantle", False)
+
+            args_clean = (args or "").strip().lower()
+            confirmed = any(flag in args_clean for flag in ("confirm", "run", "execute", "yes", "force", "now"))
+
+            plan = self.run_shard_planner(
+                dismantle_threshold=d_thresh,
+                protect_threshold=p_thresh,
+                dry_run=is_dry_run,
+            )
+            cmd_preview = "\n".join(f"`{cmd}`" for cmd in plan.batch_commands) or "*No safe items to dismantle.*"
+
+            if not is_dry_run and (confirmed or auto_dismantle):
+                # Execute dismantle commands
+                if plan.batch_commands and hasattr(self.bot, "neura_enqueue"):
+                    for cmd in plan.batch_commands:
+                        await self.bot.neura_enqueue(cmd, priority=4)
+
+                response = (
+                    f"💎 **[OwO Strategy Engine — Weapon Shard Dismantle Plan]**\n"
+                    f"🚀 **EXECUTION MODE:** Enqueued **{len(plan.batch_commands)}** dismantle commands for **{len(plan.safe_to_dismantle)}** weapons!\n"
+                    f"─────────────────────────────\n"
+                    f"💰 **Current Shards:** `{plan.current_shards:,}`\n"
+                    f"♻️ **Safe to Dismantle:** `{len(plan.safe_to_dismantle)} weapons` "
+                    f"(Projected gain: **`+{plan.projected_shards_gained:,} shards`**)\n"
+                    f"🔒 **Protected Weapons:** `{len(plan.protected_weapons)} weapons` "
+                    f"*(Active lineup + Quality >= {p_thresh:.0f}%)*\n"
+                    f"🎯 **Target Milestone:** `{plan.next_milestone}` "
+                    f"(`{plan.milestone_progress_percent:.1f}%` progress)\n\n"
+                    f"📋 **Enqueued Batch Commands:**\n{cmd_preview}"
+                )
+                await channel.send(response)
+                if hasattr(self.bot, "log"):
+                    self.bot.log(
+                        "STRATEGY",
+                        f"Executed dismantle plan: {len(plan.batch_commands)} commands for {len(plan.safe_to_dismantle)} weapons (+{plan.projected_shards_gained} shards)"
+                    )
+            elif not is_dry_run:
+                response = (
+                    f"💎 **[OwO Strategy Engine — Weapon Shard Dismantle Plan]**\n"
+                    f"⚠️ **READY TO EXECUTE:** `dry_run = False` *(Type `owo shards confirm` to execute)*\n"
+                    f"─────────────────────────────\n"
+                    f"💰 **Current Shards:** `{plan.current_shards:,}`\n"
+                    f"♻️ **Safe to Dismantle:** `{len(plan.safe_to_dismantle)} weapons` "
+                    f"(Projected gain: **`+{plan.projected_shards_gained:,} shards`**)\n"
+                    f"🔒 **Protected Weapons:** `{len(plan.protected_weapons)} weapons` "
+                    f"*(Active lineup + Quality >= {p_thresh:.0f}%)*\n"
+                    f"🎯 **Target Milestone:** `{plan.next_milestone}` "
+                    f"(`{plan.milestone_progress_percent:.1f}%` progress)\n\n"
+                    f"📋 **Manual Batch Commands Preview:**\n{cmd_preview}\n\n"
+                    f"👉 *Type `owo shards confirm` or `!owo-shards confirm` to run batch dismantle.*"
+                )
+                await channel.send(response)
+                if hasattr(self.bot, "log"):
+                    self.bot.log("STRATEGY", f"Generated shard plan (+{plan.projected_shards_gained} shards preview, awaiting confirmation)")
+            else:
+                response = (
+                    f"💎 **[OwO Strategy Engine — Weapon Shard Dismantle Plan]**\n"
+                    f"🛡️ **SAFETY MODE:** `dry_run = True` *(Automatic execution disabled)*\n"
+                    f"─────────────────────────────\n"
+                    f"💰 **Current Shards:** `{plan.current_shards:,}`\n"
+                    f"♻️ **Safe to Dismantle:** `{len(plan.safe_to_dismantle)} weapons` "
+                    f"(Projected gain: **`+{plan.projected_shards_gained:,} shards`**)\n"
+                    f"🔒 **Protected Weapons:** `{len(plan.protected_weapons)} weapons` "
+                    f"*(Active lineup + Quality >= {p_thresh:.0f}%)*\n"
+                    f"🎯 **Target Milestone:** `{plan.next_milestone}` "
+                    f"(`{plan.milestone_progress_percent:.1f}%` progress)\n\n"
+                    f"📋 **Manual Batch Commands Preview:**\n{cmd_preview}\n\n"
+                    f"⚠️ *Safety Guardrail: Copy and execute dismantle commands manually in OwO.*"
+                )
+                await channel.send(response)
+                if hasattr(self.bot, "log"):
+                    self.bot.log("STRATEGY", f"Generated shard plan (+{plan.projected_shards_gained} shards preview)")
+        except Exception as exc:
+            logger.error("Error executing !owo-shards: %s", exc)
+            await channel.send(f"❌ Shard Planner Error: `{exc}`")
+
+    async def _cmd_equip(self, channel: discord.abc.Messageable) -> None:
+        """Execute !owo-equip / owo equip: optimizes and enqueues equip commands on-demand."""
+        status_msg = await channel.send("⏳ Calculating optimal team and enqueuing equip commands...")
+        try:
+            result, _, _ = self.run_optimization(coarse_seeds=10, fine_seeds=50)
+            winner = result.winner
+            equip_cmds = await self.execute_live_equip(winner, priority=2, log_enqueue=False)
+
+            winner_animals = " / ".join(f"**{a.title()}**" for a in winner.animal_names)
+            winner_weapons = " / ".join(winner.weapon_names)
+            cmd_list_str = "\n".join(f"`{c}`" for c in equip_cmds)
+
+            response = (
+                f"⚔️ **[OwO Strategy Engine — Team Auto-Equipped]**\n"
+                f"**Equipped Lineup:** {winner_animals}\n"
+                f"**Weapons:** {winner_weapons}\n"
+                f"📈 **Win Rate:** **`{winner.fine_win_rate * 100.0:.1f}%`**\n"
+                f"─────────────────────────────\n"
+                f"Enqueued **{len(equip_cmds)}** equip commands into execution queue:\n"
+                f"{cmd_list_str}"
+            )
+            await status_msg.edit(content=response)
+            if hasattr(self.bot, "log"):
+                self.bot.log(
+                    "STRATEGY",
+                    f"On-demand team equip enqueued: {len(equip_cmds)} commands for [{', '.join(winner.animal_names)}]"
+                )
+        except Exception as exc:
+            logger.error("Error executing !owo-equip: %s", exc)
+            await status_msg.edit(content=f"❌ Auto-Equip Error: `{exc}`")
+
+    # =========================================================================
+    # Standard discord.ext Commands
+    # =========================================================================
+
+    @commands.command(name="owo-eval", aliases=["owoeval", "eval_team"])
+    async def owo_eval_cmd(self, ctx: commands.Context) -> None:
+        """Evaluate the active team lineup and EHP breakdown."""
+        await self._cmd_eval(ctx.channel)
+
+    @commands.command(name="owo-opt", aliases=["owoopt", "opt_team"])
+    async def owo_opt_cmd(self, ctx: commands.Context) -> None:
+        """Run 3-stage multi-fidelity tournament optimizer."""
+        await self._cmd_opt(ctx.channel)
+
+    @commands.command(name="owo-boss", aliases=["owoboss", "boss_sim"])
+    async def owo_boss_cmd(self, ctx: commands.Context) -> None:
+        """Simulate active team against Guild Boss raid."""
+        await self._cmd_boss(ctx.channel)
+
+    @commands.command(name="owo-shards", aliases=["owoshards", "shard_plan"])
+    async def owo_shards_cmd(self, ctx: commands.Context, *, args: str = "") -> None:
+        """Generate safe weapon dismantle plan and milestone."""
+        await self._cmd_shards(ctx.channel, args=args)
+
+    @commands.command(name="owo-equip", aliases=["owoequip", "equip_optimal", "equip"])
+    async def owo_equip_cmd(self, ctx: commands.Context) -> None:
+        """Run optimizer and auto-equip the tournament winning lineup."""
+        await self._cmd_equip(ctx.channel)
+
+
+async def setup(bot: commands.Bot) -> None:
+    """Extension async entry point for NeuraSelf."""
+    await bot.add_cog(StrategyEngine(bot))

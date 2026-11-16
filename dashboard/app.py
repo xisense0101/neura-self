@@ -50,12 +50,30 @@ def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 
 socket.getaddrinfo = patched_getaddrinfo
 
+import werkzeug
+if not hasattr(werkzeug, '__version__'):
+    import importlib.metadata
+    try:
+        werkzeug.__version__ = importlib.metadata.version('werkzeug')
+    except Exception:
+        werkzeug.__version__ = '3.1.9'
+
 app = Flask(__name__)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['JSON_SORT_KEYS'] = False
 try:
     app.json.sort_keys = False
 except AttributeError:
     pass
+
+@app.after_request
+def add_no_cache_headers(response):
+    # Prevent browsers from holding onto stale static JS/CSS and API states across restarts
+    if request.path.startswith('/static/') or request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -183,19 +201,117 @@ def account_list():
         })
     return jsonify(accounts)
 
-def get_bot(account_id):
-    if not account_id:
-        return state.bot_instances[0] if state.bot_instances else None
-    for bot in state.bot_instances:
-        if bot.user and str(bot.user.id) == str(account_id):
-            return bot
+def clean_account_id(account_id):
+    """Normalize account_id; returns stripped string if valid, else None."""
+    if account_id is None:
+        return None
+    s = str(account_id).strip()
+    if not s or s.lower() in ('undefined', 'null', 'none'):
+        return None
+    return s
+
+
+def get_default_account_id():
+    """Retrieve primary active bot user ID or first configured account ID."""
+    if state.bot_instances:
+        for b in state.bot_instances:
+            if getattr(b, 'user', None) and getattr(b.user, 'id', None):
+                return str(b.user.id)
+            if getattr(b, 'user_id', None):
+                return str(b.user_id)
+            token = getattr(b, 'token', None) or getattr(b, '_token', None)
+            if token:
+                try:
+                    import base64
+                    part = token.split('.')[0]
+                    padding = '=' * ((4 - len(part) % 4) % 4)
+                    decoded = base64.b64decode(part + padding).decode('utf-8', errors='ignore')
+                    if decoded.isdigit():
+                        return decoded
+                except Exception:
+                    pass
+
+    # In testing mode without active bots, prefer default test fixture
+    if app.config.get('TESTING'):
+        return None
+
+    accounts_file = os.path.join(state.CONFIG_DIR, 'accounts.json')
+    if os.path.exists(accounts_file):
+        try:
+            with open(accounts_file, 'r', encoding='utf-8') as f:
+                acc_data = json.load(f)
+            accounts = acc_data.get('accounts', [])
+            target = next((a for a in accounts if a.get('enabled', True)), accounts[0] if accounts else None)
+            if target:
+                if target.get('user_id'):
+                    return str(target['user_id'])
+                if target.get('id'):
+                    return str(target['id'])
+                token = target.get('token')
+                if token:
+                    import base64
+                    part = token.split('.')[0]
+                    padding = '=' * ((4 - len(part) % 4) % 4)
+                    decoded = base64.b64decode(part + padding).decode('utf-8', errors='ignore')
+                    if decoded.isdigit():
+                        return decoded
+        except Exception:
+            pass
+
+    try:
+        data_dir = os.path.join(BASE_DIR, 'data')
+        if os.path.exists(data_dir):
+            for fname in sorted(os.listdir(data_dir)):
+                if fname.startswith('strategy_state_') and fname.endswith('.json'):
+                    cand = fname[len('strategy_state_'):-len('.json')]
+                    if cand.isdigit():
+                        return cand
+    except Exception:
+        pass
+
+    return None
+
+
+def resolve_account_id(account_id=None):
+    """Ensure account_id is valid, falling back to active bot or default configured account."""
+    cleaned = clean_account_id(account_id)
+    if cleaned:
+        return cleaned
+
+    if request:
+        try:
+            req_id = request.args.get('id')
+            cleaned_req = clean_account_id(req_id)
+            if cleaned_req:
+                return cleaned_req
+            if request.is_json:
+                data = request.get_json(silent=True) or {}
+                json_id = data.get('id')
+                cleaned_json = clean_account_id(json_id)
+                if cleaned_json:
+                    return cleaned_json
+        except Exception:
+            pass
+
+    return get_default_account_id()
+
+
+def get_bot(account_id=None):
+    resolved_id = resolve_account_id(account_id)
+    if resolved_id:
+        for bot in state.bot_instances:
+            if getattr(bot, 'user', None) and str(bot.user.id) == resolved_id:
+                return bot
+            if getattr(bot, 'user_id', None) and str(bot.user_id) == resolved_id:
+                return bot
     return state.bot_instances[0] if state.bot_instances else None
 
 
 @app.route('/api/stats')
 @login_required
 def stats():
-    account_id = request.args.get('id')
+    raw_id = request.args.get('id')
+    account_id = resolve_account_id(raw_id)
     bot = get_bot(account_id)
     uid = str(account_id) if account_id else (str(bot.user.id) if bot and bot.user else None)
 
@@ -238,7 +354,7 @@ def stats():
     response_data = {
         'uptime': utils.format_seconds(elapsed),
         'cash': st.get('current_cash', 0),
-        'logs': [l for l in state.command_logs if str(l.get('bot_id')) == uid][:200],
+        'logs': [l for l in state.command_logs if not l.get('bot_id') or str(l.get('bot_id')) == uid][:200],
         'status': current_status,
         'security': {
              'captchas': st.get('captchas_solved', 0),
@@ -1038,6 +1154,51 @@ def clear_captcha_challenge(account_id):
     if account_id in _pending_captchas:
         _pending_captchas.pop(account_id, None)
         state.log_command("SEC", f"Captcha challenge cleared for account {account_id}", "info")
+
+
+# =========================================================================
+# OwO Strategy Engine REST API Endpoints (PAUSED / COMING SOON)
+# =========================================================================
+
+def get_strategy_engine(account_id=None):
+    """Strategy Engine is currently paused."""
+    return None
+
+
+@app.route('/api/strategy/state', methods=['GET'])
+def api_strategy_state():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/optimize', methods=['POST'])
+def api_strategy_optimize():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/boss', methods=['POST'])
+def api_strategy_boss():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/shards', methods=['POST'])
+def api_strategy_shards():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/equip', methods=['POST'])
+def api_strategy_equip():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/dismantle', methods=['POST'])
+def api_strategy_dismantle():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
+
+@app.route('/api/strategy/sync', methods=['POST'])
+def api_strategy_sync():
+    return jsonify({"status": "disabled", "message": "Strategy Engine is currently paused (Coming Soon)"})
+
 
 if __name__ == '__main__':
     print("[NeuraSelf] Starting Web Dashboard on http://localhost:8000")

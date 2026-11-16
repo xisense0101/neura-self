@@ -64,6 +64,9 @@ window.nav = function(id, el) {
         pollForCaptchas();
         if (typeof populateTelegramSecurityUI === 'function') populateTelegramSecurityUI();
     }
+    if (id === 'strategy' && typeof loadStrategyView === 'function') {
+        loadStrategyView();
+    }
 };
 
 window.toggleMobileMenu = function() {

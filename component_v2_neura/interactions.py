@@ -126,19 +126,43 @@ class InteractionManager:
     async def click_button(self, custom_id, message, guild_id=None):
         if not custom_id or not message:
             return False
-            
+
+        # Attempt 1: discord.py-self native Button.click() if message components exist
+        if hasattr(message, "components") and message.components:
+            for row in message.components:
+                for comp in getattr(row, "children", []):
+                    if getattr(comp, "custom_id", None) == custom_id:
+                        if getattr(comp, "disabled", False):
+                            return False
+                        try:
+                            if hasattr(comp, "click"):
+                                await comp.click()
+                                return True
+                        except Exception as e:
+                            if hasattr(self.bot, "log"):
+                                self.bot.log("DEBUG", f"Native button.click failed: {e}, falling back to REST")
+                            break
+
+        flags = getattr(message.flags, "value", 0) if hasattr(message, "flags") else 0
         return await self.click_button_raw(
             custom_id=custom_id,
             message_id=message.id,
             channel_id=message.channel.id,
             guild_id=guild_id or (message.guild.id if message.guild else None),
             author_id=message.author.id,
-            flags=message.flags.value
+            flags=flags
         )
 
     async def click_button_raw(self, custom_id, message_id, channel_id, author_id, guild_id=None, flags=0):
         if not custom_id:
             return False
+
+        session_id = (
+            getattr(getattr(self.bot, "_connection", None), "session_id", None)
+            or getattr(self.bot, "session_id", None)
+            or getattr(getattr(self.bot, "ws", None), "session_id", None)
+            or ""
+        )
 
         payload = {
             "type": 3,
@@ -146,7 +170,7 @@ class InteractionManager:
             "guild_id": str(guild_id) if guild_id else None,
             "channel_id": str(channel_id),
             "message_id": str(message_id),
-            "session_id": self.bot.ws.session_id if hasattr(self.bot, 'ws') else None,
+            "session_id": session_id,
             "message_flags": flags,
             "data": {
                 "component_type": 2,

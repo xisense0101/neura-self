@@ -19,9 +19,11 @@ NeuraSelf-UwU - https://github.com/routo-loop/neura-self
 
 
 import asyncio
+import os
 import time
 import random
 import re
+import copy
 import core.state as state
 from discord.ext import commands
 
@@ -30,10 +32,31 @@ class Gambling(commands.Cog):
         self.bot = bot
         self.active = True
         self.task = None
-        self.martingale_states = {}
         self.last_outcomes = {}
         self.gambling_stats = {}
         self._processed_gamble_ids = set()
+        uid = str(getattr(self.bot, 'user_id', ''))
+        if not uid and hasattr(self.bot, '_connection') and self.bot.user:
+            uid = str(self.bot.user.id)
+        if not state.account_stats and os.path.exists(state.STATS_FILE):
+            state.load_account_stats()
+        saved_states = state.account_stats.get(uid, {}).get('martingale_states', {})
+        self.martingale_states = copy.deepcopy(saved_states) if saved_states else {}
+
+    def _load_martingale_states(self):
+        uid = str(self.bot.user.id) if (hasattr(self.bot, '_connection') and self.bot.user) else str(getattr(self.bot, 'user_id', ''))
+        if not state.account_stats and os.path.exists(state.STATS_FILE):
+            state.load_account_stats()
+        saved_states = state.account_stats.get(uid, {}).get('martingale_states', {})
+        self.martingale_states = copy.deepcopy(saved_states) if saved_states else {}
+
+    def _save_martingale_states(self):
+        uid = str(self.bot.user.id) if (hasattr(self.bot, '_connection') and self.bot.user) else str(getattr(self.bot, 'user_id', ''))
+        if uid:
+            if uid not in state.account_stats:
+                state.account_stats[uid] = state.get_empty_stats()
+            state.account_stats[uid]['martingale_states'] = copy.deepcopy(self.martingale_states)
+            state.save_account_stats()
 
     def _mark_processed(self, msg_id):
         if not hasattr(self, '_processed_gamble_ids'):
@@ -53,29 +76,79 @@ class Gambling(commands.Cog):
         st = state.account_stats.get(uid, {})
         return st.get('current_cash', None)
 
-    def _check_safeguards(self):
+    def _check_safeguards(self, cmd=None, bet_amount=None):
         gamble_cfg = self._get_gambling_cfg()
         min_balance = gamble_cfg.get('min_balance', 0)
         max_balance = gamble_cfg.get('max_balance', 999999999)
         current_cash = self._get_current_cash()
         if current_cash is None:
-            self.bot.log("GAMBLING", "Cash unknown. Skipping bet until balance sync.")
+            self.bot.log("GAMBLING", f"Cash unknown. Skipping {cmd or 'gamble'} bet until balance sync.")
             return False
+
+        if bet_amount is None:
+            if cmd is not None:
+                bet_amount = self._get_current_bet_for_cmd(cmd)
+            else:
+                active_cmds = [c for c in ['coinflip', 'slots', 'blackjack'] if hasattr(self.bot, 'cmd_states') and c in self.bot.cmd_states]
+                bets = [self._get_current_bet_for_cmd(c) for c in active_cmds]
+                bet_amount = max(bets) if bets else 0
+
         if current_cash < min_balance:
             self.bot.log("GAMBLING", f"Stop-loss: {current_cash} < min {min_balance}. Suspending.")
+            if cmd:
+                self._reset_martingale_streak(cmd)
             return False
         if current_cash > max_balance:
             self.bot.log("GAMBLING", f"Take-profit: {current_cash} > max {max_balance}. Suspending.")
             return False
+
+        if bet_amount and (current_cash < bet_amount or (current_cash - bet_amount) < min_balance):
+            self.bot.log("WARN", f"GAMBLING: Insufficient funds for {cmd} (Cash: {current_cash}, Bet: {bet_amount}, Min: {min_balance}). Resetting Martingale.")
+            self._reset_martingale_streak(cmd)
+            return False
+
         return True
+
+    def _reset_martingale_streak(self, cmd=None):
+        target_cmds = [cmd] if cmd else list(self.martingale_states.keys())
+        if not target_cmds:
+            target_cmds = ['coinflip', 'slots', 'blackjack']
+        max_bet = self._get_gambling_cfg().get('max_bet', 100000)
+        for c in target_cmds:
+            cmd_cfg = self._get_cmd_cfg(c)
+            base_amount = self.martingale_states.get(c, {}).get('base_bet') or cmd_cfg.get('amount', 1)
+            base = min(base_amount, max_bet)
+            if c in self.martingale_states:
+                self.martingale_states[c]['current_bet'] = base
+                self.martingale_states[c]['base_bet'] = base
+                self.martingale_states[c]['consecutive_losses'] = 0
+                self.martingale_states[c]['consecutive_wins'] = 0
+            else:
+                self.martingale_states[c] = {
+                    'current_bet': base,
+                    'base_bet': base,
+                    'consecutive_losses': 0,
+                    'consecutive_wins': 0
+                }
+            if hasattr(self.bot, 'cmd_states') and c in self.bot.cmd_states:
+                if c == 'coinflip':
+                    side = cmd_cfg.get('side', 'h')
+                    self.bot.cmd_states[c]['content'] = f"cf {side} {base}"
+                elif c == 'slots':
+                    self.bot.cmd_states[c]['content'] = f"slots {base}"
+                elif c == 'blackjack':
+                    self.bot.cmd_states[c]['content'] = f"bj {base}"
+        self._save_martingale_states()
 
     def _parse_blackjack_outcome(self, embed):
         footer = embed.footer.text if embed.footer else ""
-        if "You won" in footer:
+        desc = embed.description or ""
+        combined = f"{footer} {desc}".lower()
+        if "you won" in combined or re.search(r'\b(won|win)\b', combined):
             return "win"
-        if "You lost" in footer:
+        if "you lost" in combined or re.search(r'\b(lost|lose)\b', combined):
             return "loss"
-        if "You tied" in footer or "You both bust" in footer:
+        if "you tied" in combined or "you both bust" in combined or re.search(r'\b(tied|tie|push)\b', combined):
             return "tie"
         return None
 
@@ -92,6 +165,7 @@ class Gambling(commands.Cog):
                     'consecutive_losses': 0,
                     'consecutive_wins': 0
                 }
+                self._save_martingale_states()
             bet = self.martingale_states[cmd]['current_bet']
             return min(bet, max_bet)
         else:
@@ -121,6 +195,7 @@ class Gambling(commands.Cog):
             self.bot.log("GAMBLING", f"Martingale: Lost! Next: {m_state['current_bet']}")
         elif outcome == 'tie':
             self.bot.log("GAMBLING", f"Martingale: Push/Break-even! Holding bet at {m_state['current_bet']}")
+        self._save_martingale_states()
 
     def _record_outcome(self, cmd, outcome, bet_amount, net_profit):
         uid = str(self.bot.user.id) if (hasattr(self.bot, '_connection') and self.bot.user) else str(getattr(self.bot, 'user_id', ''))
@@ -150,6 +225,10 @@ class Gambling(commands.Cog):
         st = state.account_stats.get(uid, {})
         if st:
             st['gambling_stats'] = gs
+            if 'current_cash' in st and st['current_cash'] is not None:
+                st['current_cash'] = max(0, st['current_cash'] + net_profit)
+                st['last_cash_update'] = time.time()
+            st['martingale_states'] = copy.deepcopy(self.martingale_states)
             state.save_account_stats()
 
     def _get_current_bet_for_cmd(self, cmd):
@@ -158,7 +237,7 @@ class Gambling(commands.Cog):
         return self._get_bet_amount(cmd, base_amount)
 
     def trigger_coinflip(self):
-        if not self._check_safeguards():
+        if not self._check_safeguards('coinflip'):
             return
         cfg = self._get_cmd_cfg('coinflip')
         amount = self._get_current_bet_for_cmd('coinflip')
@@ -168,7 +247,7 @@ class Gambling(commands.Cog):
         self.bot.log("GAMBLING", f"Coinflip: Betting {amount} on {side}")
 
     def trigger_slots(self):
-        if not self._check_safeguards():
+        if not self._check_safeguards('slots'):
             return
         cfg = self._get_cmd_cfg('slots')
         amount = self._get_current_bet_for_cmd('slots')
@@ -177,7 +256,7 @@ class Gambling(commands.Cog):
         self.bot.log("GAMBLING", f"Slots: Betting {amount}")
 
     def trigger_blackjack(self):
-        if not self._check_safeguards():
+        if not self._check_safeguards('blackjack'):
             return
         cfg = self._get_cmd_cfg('blackjack')
         amount = self._get_current_bet_for_cmd('blackjack')
@@ -286,14 +365,69 @@ class Gambling(commands.Cog):
 
             if outcome in ("win", "loss", "tie"):
                 self._mark_processed(message.id)
-                bet_amount = self._get_current_bet_for_cmd('blackjack')
+                embed = message.embeds[0] if message.embeds else None
+                author_obj = getattr(embed, 'author', None) if embed else None
+                author_name = getattr(author_obj, 'name', '') if author_obj else ""
+                footer_obj = getattr(embed, 'footer', None) if embed else None
+                footer = getattr(footer_obj, 'text', '') if footer_obj else ""
+                desc = getattr(embed, 'description', '') or ""
+
+                # Extract actual bet from author name (e.g. "you bet 2,000 to play blackjack"), description, fields, or message content
+                bet_match = re.search(r'bet\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', author_name, re.IGNORECASE)
+                if not bet_match and desc:
+                    bet_match = re.search(r'bet\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', desc, re.IGNORECASE)
+                if not bet_match and embed:
+                    for fld in embed.fields:
+                        fld_text = f"{fld.name or ''} {fld.value or ''}"
+                        bet_match = re.search(r'bet\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', fld_text, re.IGNORECASE)
+                        if bet_match:
+                            break
+                if not bet_match:
+                    bet_match = re.search(r'bet\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower, re.IGNORECASE)
+                if not bet_match:
+                    bet_match = re.search(r'spent\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', content_lower, re.IGNORECASE)
+
+                bet_amount = int(bet_match.group(1).replace(',', '')) if bet_match else self._get_current_bet_for_cmd('blackjack')
+
+                combined = f"{footer} {desc} {content_lower}".lower()
+
                 if outcome == "win":
-                    net = bet_amount
+                    # Check for natural 21 (Blackjack) which pays 3:2 (1.5x profit)
+                    is_natural = False
+                    if embed:
+                        for fld in embed.fields:
+                            fname = (fld.name or "").lower()
+                            fval = (fld.value or "").lower()
+                            if "dealer" not in fname and ("blackjack" in fname or "blackjack" in fval):
+                                is_natural = True
+                                break
+                    if "blackjack!" in combined or "natural" in combined or "3:2" in combined:
+                        is_natural = True
+
+                    won_match = re.search(r'(?:and won|you won|won)\s+(?:<a?:\w+:\d+>|:\w+:)?\s*([,\d]+)', combined)
+                    if won_match:
+                        payout = int(won_match.group(1).replace(',', ''))
+                        if payout == int(bet_amount * 1.5):
+                            net = payout
+                        elif payout == int(bet_amount * 2.5):
+                            net = payout - bet_amount
+                        elif payout == bet_amount * 2:
+                            net = payout - bet_amount
+                        elif payout == bet_amount:
+                            net = payout
+                        elif is_natural:
+                            net = int(bet_amount * 1.5)
+                        else:
+                            net = payout
+                    elif is_natural:
+                        net = int(bet_amount * 1.5)
+                    else:
+                        net = bet_amount
                 elif outcome == "loss":
                     net = -bet_amount
                 else:
                     net = 0
-                self._handle_gamble_outcome('blackjack', outcome, bet_amount, net, content_lower)
+                self._handle_gamble_outcome('blackjack', outcome, bet_amount, net, combined)
             elif outcome is None:
                 # In-progress Blackjack game, wait for final embed
                 pass
@@ -312,10 +446,16 @@ class Gambling(commands.Cog):
         if cmd == 'coinflip':
             side = cmd_cfg.get('side', 'h')
             next_bet = self._get_current_bet_for_cmd('coinflip')
-            self.bot.cmd_states['coinflip']['content'] = f"cf {side} {next_bet}"
+            if hasattr(self.bot, 'cmd_states') and 'coinflip' in self.bot.cmd_states:
+                self.bot.cmd_states['coinflip']['content'] = f"cf {side} {next_bet}"
         elif cmd == 'slots':
             next_bet = self._get_current_bet_for_cmd('slots')
-            self.bot.cmd_states['slots']['content'] = f"slots {next_bet}"
+            if hasattr(self.bot, 'cmd_states') and 'slots' in self.bot.cmd_states:
+                self.bot.cmd_states['slots']['content'] = f"slots {next_bet}"
+        elif cmd == 'blackjack':
+            next_bet = self._get_current_bet_for_cmd('blackjack')
+            if hasattr(self.bot, 'cmd_states') and 'blackjack' in self.bot.cmd_states:
+                self.bot.cmd_states['blackjack']['content'] = f"bj {next_bet}"
 
         self._sync_cash_from_response(content)
         outcome_str = outcome.upper()
@@ -324,7 +464,7 @@ class Gambling(commands.Cog):
         self.bot.log("GAMBLING", f"{cmd.upper()}: {outcome_str} (Bet: {bet_amount}, Net: {net_profit:+}, Overall Net: {gs.get('net_profit', 0):,})")
 
     def _sync_cash_from_response(self, content):
-        cash_match = re.search(r'(?:now have|balance[^\d]*)([,\d]+)', content, re.IGNORECASE)
+        cash_match = re.search(r'(?:now have|balance)[^\d]*([,\d]+)', content, re.IGNORECASE)
         if cash_match:
             try:
                 cash_str = cash_match.group(1).replace(',', '')

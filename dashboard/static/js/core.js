@@ -37,6 +37,7 @@ const CONFIG_CATEGORY_HINTS = {
     core: 'Channels, prefix, and main bot switches',
     stealth: 'Human-like delays and timing',
     security: 'Captcha handling, Telegram notifications, and safety pauses',
+    strategy: 'AI Team Optimization, auto-equip, and shard dismantling',
     reactionBot: 'Auto-reactions and triggers',
     boss: 'Boss fight automation',
     level_grind: 'XP grinding behavior',

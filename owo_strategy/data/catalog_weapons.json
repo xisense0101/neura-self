@@ -1,0 +1,802 @@
+[
+  {
+    "id": null,
+    "name": "Physically Attacking",
+    "wp_cost_range": null,
+    "stat_ranges": [],
+    "passive_slots": 0,
+    "description": "",
+    "active_ability": null,
+    "slug": "fists",
+    "aliases": [
+      "Fists",
+      "Strength Attacking"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 101,
+    "name": "Great Sword",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 35,
+        "max": 55,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 4.5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to all opponents.",
+    "active_ability": null,
+    "slug": "sword",
+    "aliases": [
+      "Sword",
+      "Gsword",
+      "Greatsword"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 102,
+    "name": "Healing Staff",
+    "wp_cost_range": [
+      150,
+      225
+    ],
+    "stat_ranges": [
+      {
+        "min": 110,
+        "max": 160,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Heals [stat] of your :mag: MAG to the lowest health ally. This weapon can overheal up to 50% of max :hp: HP.",
+    "active_ability": null,
+    "slug": "hstaff",
+    "aliases": [
+      "Hstaff",
+      "Healstaff"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 103,
+    "name": "Bow",
+    "wp_cost_range": [
+      120,
+      220
+    ],
+    "stat_ranges": [
+      {
+        "min": 110,
+        "max": 160,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent.",
+    "active_ability": null,
+    "slug": "bow",
+    "aliases": [],
+    "buff_slugs": []
+  },
+  {
+    "id": 104,
+    "name": "Rune of the Forgotten",
+    "wp_cost_range": null,
+    "stat_ranges": [
+      {
+        "min": 5,
+        "max": 15,
+        "emoji": [
+          "all_stats.gif",
+          "stat_increase.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 0,
+    "description": "Increases :all_stats: ALL stats by [stat], and changes your physical attacks to deal 65% :str: STR and 65% :mag: MAG as TRUE damage. This weapon does not have an active ability.",
+    "active_ability": null,
+    "slug": "rune",
+    "aliases": [
+      "Rune"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 105,
+    "name": "Defender's Aegis",
+    "wp_cost_range": [
+      150,
+      250
+    ],
+    "stat_ranges": [],
+    "passive_slots": 1,
+    "description": "At the start of the turn, applies :taunt: **Taunt** to yourself for 2 turns.",
+    "active_ability": [
+      "taunt"
+    ],
+    "slug": "shield",
+    "aliases": [
+      "Shield",
+      "Aegis"
+    ],
+    "buff_slugs": [
+      "taunt"
+    ]
+  },
+  {
+    "id": 106,
+    "name": "Orb of Potency",
+    "wp_cost_range": null,
+    "stat_ranges": [],
+    "passive_slots": 2,
+    "description": "This weapon has no active ability, but comes with two passives!",
+    "active_ability": null,
+    "slug": "orb",
+    "aliases": [
+      "Orb"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 107,
+    "name": "Vampiric Staff",
+    "wp_cost_range": [
+      90,
+      190
+    ],
+    "stat_ranges": [
+      {
+        "min": 25,
+        "max": 45,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :mag: MAG to ALL enemies and heals ALL allies by the damage dealt.",
+    "active_ability": null,
+    "slug": "vstaff",
+    "aliases": [
+      "Vstaff",
+      "Vampstaff"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 108,
+    "name": "Poison Dagger",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 70,
+        "max": 100,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent and applies :poison: **Poison** for 3 turns.",
+    "active_ability": [
+      "poison"
+    ],
+    "slug": "dagger",
+    "aliases": [
+      "Dagger",
+      "Pdagger",
+      "Pdag",
+      "Pd"
+    ],
+    "buff_slugs": [
+      "poison"
+    ]
+  },
+  {
+    "id": 109,
+    "name": "Wand of Absorption",
+    "wp_cost_range": [
+      150,
+      250
+    ],
+    "stat_ranges": [
+      {
+        "min": 80,
+        "max": 115,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 20,
+        "max": 40,
+        "emoji": [
+          "wp_transfer.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :mag: MAG to an opponent and transfers their :wp: WP to an ally equal to [stat] of the damage dealt.",
+    "active_ability": null,
+    "slug": "wand",
+    "aliases": [
+      "Wand",
+      "Awand"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 110,
+    "name": "Flame Staff",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 75,
+        "max": 95,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :mag: MAG to an opponent and applies :flame: **Flame** for 3 turns.",
+    "active_ability": [
+      "flame"
+    ],
+    "slug": "fstaff",
+    "aliases": [
+      "Fstaff"
+    ],
+    "buff_slugs": [
+      "flame"
+    ]
+  },
+  {
+    "id": 111,
+    "name": "Energy Staff",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 35,
+        "max": 65,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Sends a wave of energy and deals [stat] of your :mag: MAG to all opponents.",
+    "active_ability": null,
+    "slug": "estaff",
+    "aliases": [
+      "Estaff"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 112,
+    "name": "Spirit Staff",
+    "wp_cost_range": [
+      150,
+      250
+    ],
+    "stat_ranges": [
+      {
+        "min": 30,
+        "max": 50,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Heals all allies for [stat] of your :mag: MAG and applies :defup: **Defense Up** for 2 turns.",
+    "active_ability": [
+      "defup"
+    ],
+    "slug": "sstaff",
+    "aliases": [
+      "Sstaff"
+    ],
+    "buff_slugs": [
+      "defup"
+    ]
+  },
+  {
+    "id": 113,
+    "name": "Arcane Scepter",
+    "wp_cost_range": [
+      125,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 65,
+        "max": 95,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Replenish [stat] of your :mag: MAG as :wp: WP to an ally with the lowest :wp: WP. This weapon can overreplenish up to 50% of max :wp: WP.",
+    "active_ability": null,
+    "slug": "scepter",
+    "aliases": [
+      "Scepter",
+      "Arcane",
+      "Ascept"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 114,
+    "name": "Resurrection Staff",
+    "wp_cost_range": [
+      300,
+      400
+    ],
+    "stat_ranges": [
+      {
+        "min": 60,
+        "max": 90,
+        "emoji": [
+          "mag.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Revives a dead ally and heals them for [stat] of your :mag: MAG.",
+    "active_ability": null,
+    "slug": "rstaff",
+    "aliases": [
+      "Rstaff"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 115,
+    "name": "Glacial Axe",
+    "wp_cost_range": [
+      160,
+      260
+    ],
+    "stat_ranges": [
+      {
+        "min": 40,
+        "max": 60,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent and applies 2 stacks of :freeze: **Freeze**.",
+    "active_ability": [
+      "freeze"
+    ],
+    "slug": "axe",
+    "aliases": [
+      "Axe",
+      "Gaxe"
+    ],
+    "buff_slugs": [
+      "freeze"
+    ]
+  },
+  {
+    "id": 116,
+    "name": "Vanguard's Banner",
+    "wp_cost_range": [
+      235,
+      290
+    ],
+    "stat_ranges": [],
+    "passive_slots": 1,
+    "description": "At the start of the turn, applies :attup: **Attack Up** to all allies for 2 turns. If the holder has enough WP when the buff expires, the buff will be recast with a stronger version.",
+    "active_ability": [
+      "attup",
+      "attup+",
+      "attup++"
+    ],
+    "slug": "banner",
+    "aliases": [
+      "Banner",
+      "Vban"
+    ],
+    "buff_slugs": [
+      "attup",
+      "attup+",
+      "attup++"
+    ]
+  },
+  {
+    "id": 117,
+    "name": "Culling Scythe",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 70,
+        "max": 100,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent and applies :mort: **Mortality** for 2 turns.",
+    "active_ability": [
+      "mort"
+    ],
+    "slug": "scythe",
+    "aliases": [
+      "Scythe",
+      "Sythe",
+      "Cscythe",
+      "Csy",
+      "Csyth"
+    ],
+    "buff_slugs": [
+      "mort"
+    ]
+  },
+  {
+    "id": 118,
+    "name": "Rune of Celebration",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [],
+    "passive_slots": 1,
+    "description": "Applies :celeb: **Celebration** to the ally with the lowest health for 3 turns.",
+    "active_ability": [
+      "celeb"
+    ],
+    "slug": "crune",
+    "aliases": [
+      "Crune",
+      "Cel"
+    ],
+    "buff_slugs": [
+      "celeb"
+    ]
+  },
+  {
+    "id": 119,
+    "name": "Staff of Purity",
+    "wp_cost_range": [
+      150,
+      250
+    ],
+    "stat_ranges": [
+      {
+        "min": 50,
+        "max": 100,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Removes a debuff from a random ally and heals them for [stat] of your :mag: MAG and applies 1 stack of :sward: **Sacred Ward** for 2 turns.",
+    "active_ability": [
+      "sward"
+    ],
+    "slug": "pstaff",
+    "aliases": [
+      "Pstaff"
+    ],
+    "buff_slugs": [
+      "sward"
+    ]
+  },
+  {
+    "id": 120,
+    "name": "Leeching Scythe",
+    "wp_cost_range": [
+      130,
+      230
+    ],
+    "stat_ranges": [
+      {
+        "min": 50,
+        "max": 80,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      },
+      {
+        "min": 40,
+        "max": 60,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent and applies :leech: **Leech** for 3 turns. If :leech: **Leech** is already on the target, deals [stat] more damage.",
+    "active_ability": [
+      "leech"
+    ],
+    "slug": "lscythe",
+    "aliases": [
+      "Lscythe",
+      "Lsyth",
+      "Lsy"
+    ],
+    "buff_slugs": [
+      "leech"
+    ]
+  },
+  {
+    "id": 121,
+    "name": "Foul Fish",
+    "wp_cost_range": [
+      180,
+      280
+    ],
+    "stat_ranges": [
+      {
+        "min": 50,
+        "max": 80,
+        "emoji": [
+          "str.png"
+        ],
+        "unit": "%",
+        "digits": 4
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Deals [stat] of your :str: STR to an opponent and applies :stinky: **Stinky** for 2 turns.",
+    "active_ability": [
+      "stinky"
+    ],
+    "slug": "ffish",
+    "aliases": [
+      "Ffish"
+    ],
+    "buff_slugs": [
+      "stinky"
+    ]
+  },
+  {
+    "id": 122,
+    "name": "Rune of Luck",
+    "wp_cost_range": [
+      100,
+      200
+    ],
+    "stat_ranges": [
+      {
+        "min": 1,
+        "max": 40,
+        "emoji": [
+          "strmag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 1,
+        "max": 40,
+        "emoji": [
+          "strmag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 1,
+        "max": 40,
+        "emoji": [
+          "strmag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 1,
+        "max": 40,
+        "emoji": [
+          "strmag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 1,
+        "max": 40,
+        "emoji": [
+          "strmag.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Punches an opponent 5 times. Each punch randomly deals either a percentage of your :str: STR or :mag: MAG. Punches deal: [stat], [stat], [stat], [stat], [stat].",
+    "active_ability": null,
+    "slug": "lrune",
+    "aliases": [
+      "Lrune"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 123,
+    "name": "Staff of Corruption",
+    "wp_cost_range": [
+      150,
+      250
+    ],
+    "stat_ranges": [
+      {
+        "min": 70,
+        "max": 50,
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 80,
+        "max": 120,
+        "emoji": [],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Reduces the effectiveness of a buff on a random opponent to [stat] of its original value and deals [stat] of your :str: STR to them.",
+    "active_ability": null,
+    "slug": "cstaff",
+    "aliases": [
+      "Cstaff"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 124,
+    "name": "Soul Tithe",
+    "wp_cost_range": [
+      50,
+      100
+    ],
+    "stat_ranges": [
+      {
+        "min": 10,
+        "max": 25,
+        "emoji": [
+          "wp.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      },
+      {
+        "min": 0.35,
+        "max": 0.45,
+        "emoji": [
+          "mag.png",
+          "wp.png"
+        ],
+        "unit": "%",
+        "digits": 5
+      }
+    ],
+    "passive_slots": 1,
+    "description": "Absorbs [stat] of all allies' current :wp: WP to deal damage to an opponent. Deals [stat] of your :mag: MAG for every 1 :wp: WP absorbed.",
+    "active_ability": null,
+    "slug": "stithe",
+    "aliases": [
+      "Stithe",
+      "Tithe"
+    ],
+    "buff_slugs": []
+  },
+  {
+    "id": 125,
+    "name": "Briar-Heart Staff",
+    "wp_cost_range": [
+      140,
+      240
+    ],
+    "stat_ranges": [],
+    "passive_slots": 1,
+    "description": "At the start of the turn, applies :tether: **Thorn Tether** to your allies for 2 turns.",
+    "active_ability": [
+      "tether"
+    ],
+    "slug": "bhstaff",
+    "aliases": [
+      "Bhstaff",
+      "Bstaff"
+    ],
+    "buff_slugs": [
+      "tether"
+    ]
+  },
+  {
+    "id": 126,
+    "name": "Arbiter's Edge",
+    "wp_cost_range": [
+      125,
+      225
+    ],
+    "stat_ranges": [],
+    "passive_slots": 1,
+    "description": "Unleash judgement on an opponent. Consume all stacks of :sin: **Sin** and :virtue: **Virtue**. Gain a stack of :sin: **Sin** when an ally deals damage to an animal. Gain a stack of :virtue: **Virtue** when an ally heals or replenishes an animal.",
+    "active_ability": [
+      "sin",
+      "virtue"
+    ],
+    "slug": "aedge",
+    "aliases": [
+      "Aedge",
+      "Edge"
+    ],
+    "buff_slugs": [
+      "sin",
+      "virtue"
+    ]
+  }
+]

@@ -30,9 +30,12 @@ class NeuraLogs:
 
     def _load_config(self):
         try:
-            config_path = os.path.join(os.getcwd(), 'config', 'logmisc.json')
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_path = os.path.join(base_dir, 'config', 'logmisc.json')
+            if not os.path.exists(config_path):
+                config_path = os.path.join(os.getcwd(), 'config', 'logmisc.json')
             if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     self.log_config = json.load(f)
                     
                     import core.state as state
@@ -59,7 +62,14 @@ class NeuraLogs:
             'ERROR': 'red',
             'SECURITY': 'red',
             'AutoHunt': 'bright_cyan',
-            'STEALTH': 'yellow'
+            'STEALTH': 'yellow',
+            'STRATEGY': 'magenta',
+            'STRAT': 'magenta',
+            'STRATEGY_VERIFIED': 'bright_green',
+            'STRATEGY_WARN': 'bright_yellow',
+            'BOSS': 'red',
+            'GAMBLING': 'bright_yellow',
+            'WARN': 'yellow'
         }
 
         for k, v in type_colors.items():

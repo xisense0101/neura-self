@@ -35,6 +35,7 @@
     <link rel="stylesheet" href="/static/css/pages/proxies.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/security.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/history.css?v=2.4.0.1">
+    <!-- <link rel="stylesheet" href="/static/css/pages/strategy.css?v=2.4.4.2"> -->
     <link rel="stylesheet" href="/static/css/responsive.css?v=2.4.0.1">
 </head>
 
@@ -94,6 +95,8 @@
                         style="--icon: url('/static/assets/neura_icons/users.svg');"></span> Accounts</a>
                 <a class="nav-item" onclick="nav('dash', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/neura_icons/chart-pie.svg');"></span> Dashboard</a>
+                <a class="nav-item disabled" style="opacity:0.5; cursor:not-allowed;" title="Coming Soon"><span class="icon-svg"
+                        style="--icon: url('/static/assets/neura_icons/shield-halved.svg');"></span> Strategy <span class="badge" style="font-size:0.65rem; background:#334155; color:#94a3b8; padding:2px 6px; border-radius:4px; margin-left:6px;">Coming Soon</span></a>
                 <a class="nav-item" onclick="nav('config', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/neura_icons/sliders.svg');"></span> Configuration</a>
                 <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
@@ -334,6 +337,22 @@
                     <button class="btn-control red" onclick="action('stop', this)"><span class="icon-svg"
                             style="--icon: url('/static/assets/neura_icons/stop.svg');"></span> <span
                             class="btn-text">STOP</span></button>
+                </div>
+            </div>
+
+            <!-- Strategy Tab (Disabled / Coming Soon) -->
+            <div id=strategy class=view>
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; text-align:center; padding:40px;">
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:48px 40px; max-width:520px; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+                        <div style="width:64px; height:64px; border-radius:16px; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.3); display:flex; align-items:center; justify-content:center; margin:0 auto 24px auto;">
+                            <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/shield-halved.svg'); width:32px; height:32px; background-color:#818cf8;"></span>
+                        </div>
+                        <h2 style="font-size:1.5rem; font-weight:700; margin-bottom:12px; color:var(--text, #fff);">Strategy Engine &amp; Team Builder</h2>
+                        <span style="display:inline-block; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; font-weight:600; background:#334155; color:#94a3b8; padding:4px 12px; border-radius:20px; margin-bottom:16px;">Coming Soon</span>
+                        <p style="color:var(--text-muted, #94a3b8); font-size:0.95rem; line-height:1.6; margin:0;">
+                            This module is currently paused for upgrades and safety optimizations. All initial features remain fully operational.
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -820,15 +839,16 @@
         </button>
     </div>
 
-    <script src="/static/js/core.js"></script>
-    <script src="/static/js/navigation.js"></script>
-    <script src="/static/js/accounts.js"></script>
-    <script src="/static/js/proxies.js"></script>
-    <script src="/static/js/security.js"></script>
-    <script src="/static/js/config.js"></script>
-    <script src="/static/js/dashboard.js"></script>
-    <script src="/static/js/history.js"></script>
-    <script src="/static/js/init.js"></script>
+    <script src="/static/js/core.js?v=2.4.4.2"></script>
+    <script src="/static/js/navigation.js?v=2.4.4.2"></script>
+    <script src="/static/js/accounts.js?v=2.4.4.2"></script>
+    <script src="/static/js/proxies.js?v=2.4.4.2"></script>
+    <script src="/static/js/security.js?v=2.4.4.2"></script>
+    <script src="/static/js/config.js?v=2.4.4.2"></script>
+    <!-- <script src="/static/js/strategy.js?v=2.4.4.2"></script> -->
+    <script src="/static/js/dashboard.js?v=2.4.4.2"></script>
+    <script src="/static/js/history.js?v=2.4.4.2"></script>
+    <script src="/static/js/init.js?v=2.4.4.2"></script>
 </body>
 
 </html>

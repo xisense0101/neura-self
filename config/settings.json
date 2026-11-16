@@ -269,5 +269,18 @@
         "max_balance": 1000000,
         "bet_strategy": "martingale",
         "max_bet": 10000
+    },
+    "strategy": {
+        "enabled": false,
+        "interval": [
+            3600,
+            7200
+        ],
+        "auto_equip": true,
+        "auto_dismantle": false,
+        "dry_run": false,
+        "dismantle_quality_threshold": 40.0,
+        "protect_quality_threshold": 80.0,
+        "boss_raid_solver": true
     }
 }
